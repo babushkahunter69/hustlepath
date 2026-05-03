@@ -1,13 +1,17 @@
-import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
 
-export const metadata: Metadata = {
-  title: "HustlePath | Beginner Income Guides",
-  description: "Practical guides for beginners who want simple online income ideas without hype.",
+export const metadata = {
+  title: "Hustle Path Daily | Beginner Income Guides",
+  description:
+    "Daily beginner-friendly guides for side hustles, Pinterest blogging, tools, and online income ideas.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
