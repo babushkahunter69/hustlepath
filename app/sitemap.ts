@@ -1,15 +1,28 @@
-import type { MetadataRoute } from "next";
-import { getCategories, getPosts, toCategorySlug } from "@/lib/posts";
-
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://example.com";
-  const posts = await getPosts();
-  const categories = await getCategories();
-
+export default function sitemap() {
   return [
-    { url: baseUrl, lastModified: new Date() },
-    { url: `${baseUrl}/blog`, lastModified: new Date() },
-    ...posts.map((post) => ({ url: `${baseUrl}/blog/${post.slug}`, lastModified: new Date(post.date) })),
-    ...categories.map((category) => ({ url: `${baseUrl}/category/${toCategorySlug(category)}`, lastModified: new Date() })),
+    {
+      url: "https://hustlepathdaily.com",
+      lastModified: new Date(),
+    },
+    {
+      url: "https://hustlepathdaily.com/blog",
+      lastModified: new Date(),
+    },
+    {
+      url: "https://hustlepathdaily.com/category/beginner-guide",
+      lastModified: new Date(),
+    },
+    {
+      url: "https://hustlepathdaily.com/category/side-hustles",
+      lastModified: new Date(),
+    },
+    {
+      url: "https://hustlepathdaily.com/category/tools",
+      lastModified: new Date(),
+    },
+    {
+      url: "https://hustlepathdaily.com/category/pinterest",
+      lastModified: new Date(),
+    },
   ];
 }

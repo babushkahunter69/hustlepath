@@ -2,9 +2,10 @@ import "./globals.css";
 import Header from "@/components/Header";
 
 export const metadata = {
-  title: "Hustle Path Daily | Beginner Income Guides",
+  title: "Hustle Path Daily",
   description:
-    "Daily beginner-friendly guides for side hustles, Pinterest blogging, tools, and online income ideas.",
+    "Daily ideas, side hustles, and beginner-friendly ways to make money online.",
+  metadataBase: new URL("https://hustlepathdaily.com"),
 };
 
 export default function RootLayout({
