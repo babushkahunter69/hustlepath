@@ -1,13 +1,16 @@
-import Link from "next/link";
-import { getPosts } from "@/lib/posts";
+import Link from 'next/link';
+import { sql } from '@/lib/db';
 
-export const metadata = {
-  title: "Blog | HustlePath",
-  description: "All beginner income guides from HustlePath.",
-};
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function BlogPage() {
-  const posts = await getPosts();
+  const posts = await sql`
+    select title, slug, excerpt, category, published_at, created_at
+    from posts
+    where status = 'published'
+    order by published_at desc nulls last, created_at desc
+  `;
 
   return (
     <main className="page-shell">
@@ -16,13 +19,17 @@ export default async function BlogPage() {
         <h1 className="page-title">Blog</h1>
 
         <div className="post-grid">
-          {posts.map((post) => (
+          {posts.map((post: any) => (
             <Link key={post.slug} href={`/blog/${post.slug}`} className="post-card flat">
               <div className="post-card-body">
-                <p className="post-card-category">{post.category}</p>
+                <p className="post-card-category">{post.category || 'Guide'}</p>
                 <h3>{post.title}</h3>
                 <p>{post.excerpt}</p>
-                <span>{post.date} · {post.readTime}</span>
+                <span>
+                  {post.published_at
+                    ? new Date(post.published_at).toISOString().slice(0, 10)
+                    : new Date(post.created_at).toISOString().slice(0, 10)}
+                </span>
               </div>
             </Link>
           ))}
