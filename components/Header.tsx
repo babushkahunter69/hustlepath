@@ -7,12 +7,15 @@ export default function Header() {
         <Link href="/" className="logo">
           Hustle Path Daily<span>.</span>
         </Link>
+
         <div className="nav-links">
           <Link href="/">Home</Link>
           <Link href="/blog">Blog</Link>
           <Link href="/topics">Topics</Link>
           <Link href="/newsletter">Newsletter</Link>
-          <Link href="/admin" className="admin-link">Admin</Link>
+          <Link href="/admin/login" className="admin-link">
+            Admin
+          </Link>
         </div>
       </nav>
     </header>

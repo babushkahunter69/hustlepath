@@ -41,6 +41,9 @@ export default async function Admin() {
             <p className="admin-muted">Generate drafts, review SEO, approve posts, and publish HustlePathDaily articles.</p>
           </div>
           <div className="admin-actions compact">
+            <form action="/api/admin/logout" method="POST">
+              <button className="secondary-link" type="submit">Logout</button>
+            </form>
             <form action="/api/admin/format-existing" method="POST">
               <button className="secondary-link" type="submit">Format existing posts</button>
             </form>

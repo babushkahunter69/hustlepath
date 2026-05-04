@@ -25,29 +25,24 @@ export default async function CategoryPage({
   const posts = await getPostsByCategory(category);
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-20">
-      <p className="text-xs tracking-widest text-orange-600 font-semibold mb-3">
-        CATEGORY
-      </p>
+    <main className="page-shell">
+      <section className="section-container">
+        <p className="eyebrow">Category</p>
+        <h1 className="page-title">{titleCase(category)}</h1>
 
-      <h1 className="text-4xl font-bold mb-10">{titleCase(category)}</h1>
-
-      <div className="grid md:grid-cols-3 gap-6">
-        {posts.map((post) => (
-          <Link
-            key={post.slug}
-            href={`/blog/${post.slug}`}
-            className="border rounded-2xl p-6 hover:shadow-lg transition"
-          >
-            <p className="text-xs text-orange-600 font-semibold mb-2">
-              {post.category}
-            </p>
-            <h2 className="text-xl font-bold">{post.title}</h2>
-            <p className="text-gray-600 text-sm mt-3">{post.excerpt}</p>
-            <p className="text-xs text-gray-400 mt-5">{post.readTime}</p>
-          </Link>
-        ))}
-      </div>
+        <div className="post-grid">
+          {posts.map((post) => (
+            <Link key={post.slug} href={`/blog/${post.slug}`} className="post-card flat">
+              <div className="post-card-body">
+                <p className="post-card-category">{post.category}</p>
+                <h3>{post.title}</h3>
+                <p>{post.excerpt}</p>
+                <span>{post.readTime}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
