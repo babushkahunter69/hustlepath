@@ -24,4 +24,4 @@ create table if not exists posts (
 
 create index if not exists posts_status_idx on posts(status);
 create index if not exists posts_slug_idx on posts(slug);
-create index if not exists posts_updated_at_idx on posts(updated_at desc);
+create index if not exists posts_published_at_idx on posts(published_at);

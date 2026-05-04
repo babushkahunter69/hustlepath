@@ -1,62 +1,45 @@
 # HustlePathDaily
 
-Next.js blog with a simple admin panel, Neon-backed drafts, and AI daily draft generation.
+Next.js blog with an env-based admin login, Neon-backed draft queue, editor, publish flow, SEO scoring, internal link suggestions, and daily AI draft generation.
 
 ## Local setup
 
-1. Install dependencies:
-
 ```bash
 npm install
-```
-
-2. Copy env example:
-
-```bash
 cp .env.example .env.local
-```
-
-3. Fill in:
-
-```env
-DATABASE_URL=your_neon_connection_string
-ADMIN_EMAIL=your_admin_email
-ADMIN_PASSWORD=your_admin_password
-ADMIN_JWT_SECRET=a_long_random_secret
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-4.1-mini
-CRON_SECRET=optional_secret
-```
-
-4. Run the database schema in Neon:
-
-```sql
--- db/schema.sql
-```
-
-5. Start locally:
-
-```bash
 npm run dev
 ```
 
-Open `/admin/login` and sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+Set these in `.env.local` and in Vercel Environment Variables:
 
-## Admin features
+```env
+DATABASE_URL=your_neon_database_url
+ADMIN_JWT_SECRET=long_random_secret
+ADMIN_EMAIL=you@example.com
+ADMIN_PASSWORD=your_admin_password
+OPENAI_API_KEY=your_openai_key
+CRON_SECRET=optional_secret
+AUTO_PUBLISH_DAILY_DRAFTS=false
+```
 
-- Admin link in the main navigation
-- Env-based login, no Neon admin user table needed
-- Draft dashboard
-- Draft queue
-- Editor
-- Publish and reject flow
-- Manual `Generate draft now` button
-- Vercel daily cron at `/api/cron/daily-draft`
+## Neon setup
 
-## Vercel
+Run `db/schema.sql` in Neon SQL Editor.
 
-Add the same env vars in Vercel, then redeploy. Vercel cron is configured in `vercel.json`.
+## Admin
 
-## Security note
+Go to `/admin/login`. The admin login uses `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Neon is used for posts and drafts only.
 
-Do not commit `.env.local`. Rotate any keys that were shown in screenshots or shared publicly.
+## Draft generation
+
+Manual: click **Generate draft now** in `/admin` or `/admin/drafts`.
+
+Cron: Vercel calls `/api/cron/daily-draft` based on `vercel.json`.
+
+By default, AI drafts stay in `draft` status. To auto-publish only high-scoring drafts, set:
+
+```env
+AUTO_PUBLISH_DAILY_DRAFTS=true
+```
+
+Only generated drafts with SEO score 85+ are auto-published.

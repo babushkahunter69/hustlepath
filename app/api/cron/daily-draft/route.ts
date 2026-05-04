@@ -1,4 +1,4 @@
-import { generateDailyDraft } from '@/lib/draft-generator';
+import { generateDailyDraft } from '@/lib/aiDraft';
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -12,6 +12,6 @@ export async function GET(req: Request) {
     const post = await generateDailyDraft();
     return Response.json({ ok: true, post });
   } catch (error: any) {
-    return Response.json({ ok: false, error: error.message || 'Draft generation failed.' }, { status: 500 });
+    return Response.json({ ok: false, error: error.message || 'Draft generation failed' }, { status: 500 });
   }
 }

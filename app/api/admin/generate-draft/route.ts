@@ -1,5 +1,5 @@
+import { generateDailyDraft } from '@/lib/aiDraft';
 import { redirect } from 'next/navigation';
-import { generateDailyDraft } from '@/lib/draft-generator';
 
 export async function POST() {
   const post = await generateDailyDraft();

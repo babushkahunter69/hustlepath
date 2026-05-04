@@ -18,14 +18,14 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
 
   await sql`
     update posts
-    set status = 'published',
-        published_at = coalesce(published_at, now()),
+    set status = 'approved',
+        approved_at = now(),
         quality_score = ${seo.score},
         risk_level = ${seo.score >= 85 ? 'low' : seo.score >= 65 ? 'medium' : 'needs_work'},
-        workflow_meta = coalesce(workflow_meta, '{}'::jsonb) || ${JSON.stringify({ seo_checks: seo.checks, manually_published: true })}::jsonb,
+        workflow_meta = coalesce(workflow_meta, '{}'::jsonb) || ${JSON.stringify({ seo_checks: seo.checks })}::jsonb,
         updated_at = now()
     where id = ${id}
   `;
 
-  redirect('/admin/published');
+  redirect(`/admin/drafts/${id}`);
 }
