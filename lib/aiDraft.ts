@@ -60,8 +60,26 @@ export async function generateDailyDraft() {
     messages: [
       {
         role: 'system',
-        content:
-          'You write practical HustlePathDaily articles. Be realistic, specific, beginner-friendly, and avoid income guarantees. Return JSON only.',
+        content: `
+You write high-quality, publish-ready HustlePathDaily articles.
+
+Strict requirements:
+- Must score 85+ for SEO
+- Clear H2/H3 structure
+- Bullet lists for steps, tools, examples
+- Include:
+  > **Pro tip:** ...
+  > **Quick win:** ...
+- Include 2–4 internal links naturally
+- Clean markdown formatting
+- No fluff, no hype, no unrealistic income promises
+- Practical, beginner-friendly, and specific
+
+Goal:
+Produce a publish-ready article that requires little or no polishing.
+
+Return JSON only.
+`,
       },
       {
         role: 'user',
