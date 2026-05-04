@@ -1008,3 +1008,234 @@ button {
     padding-bottom: 56px;
   }
 }
+
+/* ===== Layout spacing system ===== */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section {
+  padding: 80px 0;
+}
+
+.section-tight {
+  padding: 48px 0;
+}
+
+/* Headings spacing */
+h1 {
+  margin-bottom: 24px;
+}
+
+h2 {
+  margin-bottom: 16px;
+}
+
+p {
+  margin-bottom: 16px;
+}
+
+/* Grid spacing */
+.grid {
+  display: grid;
+  gap: 24px;
+}
+
+/* Blog cards */
+.card {
+  padding: 24px;
+  border-radius: 16px;
+  background: #f5f3ef;
+}
+
+/* Fix button spacing */
+.button-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ===== Spacing polish patch ===== */
+
+.site-nav {
+  min-height: 88px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.home-hero-grid {
+  padding-top: 96px !important;
+  padding-bottom: 104px !important;
+  gap: 72px !important;
+}
+
+.home-hero-title {
+  font-size: clamp(54px, 7.2vw, 88px) !important;
+  line-height: 0.9 !important;
+  letter-spacing: -0.085em !important;
+}
+
+.home-hero-copy {
+  margin-top: 32px !important;
+  font-size: 21px !important;
+  line-height: 1.7 !important;
+  max-width: 640px !important;
+}
+
+.home-actions {
+  margin-top: 40px !important;
+  gap: 18px !important;
+}
+
+.featured-guide-card {
+  padding: 24px !important;
+  border-radius: 32px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.08) !important;
+}
+
+.featured-guide-inner {
+  padding: 32px !important;
+  border-radius: 24px !important;
+}
+
+.featured-guide-inner h2 {
+  margin-top: 22px !important;
+  margin-bottom: 16px !important;
+  font-size: 30px !important;
+  line-height: 1.12 !important;
+}
+
+.topic-pills {
+  margin-top: 20px !important;
+  gap: 14px !important;
+}
+
+.section-container {
+  padding-top: 72px !important;
+  padding-bottom: 72px !important;
+}
+
+.section-heading,
+.section-heading-row {
+  margin-bottom: 40px !important;
+}
+
+.post-grid,
+.topic-grid {
+  gap: 28px !important;
+}
+
+.post-card,
+.topic-card {
+  border-radius: 30px !important;
+}
+
+.post-card-body,
+.topic-card {
+  padding: 28px !important;
+}
+
+.post-card h3 {
+  font-size: 24px !important;
+  line-height: 1.13 !important;
+}
+
+.post-card p:not(.post-card-category) {
+  margin-top: 18px !important;
+  font-size: 17px !important;
+  line-height: 1.65 !important;
+}
+
+.post-card span {
+  margin-top: 28px !important;
+}
+
+.page-title {
+  margin-bottom: 42px !important;
+  font-size: clamp(52px, 7vw, 86px) !important;
+  line-height: 0.92 !important;
+}
+
+.page-subtitle {
+  margin-top: -20px !important;
+  margin-bottom: 48px !important;
+  font-size: 20px !important;
+  line-height: 1.7 !important;
+}
+
+.newsletter-grid,
+.newsletter-page {
+  padding-top: 84px !important;
+  padding-bottom: 84px !important;
+  gap: 60px !important;
+}
+
+.article-shell {
+  padding-top: 82px !important;
+  padding-bottom: 82px !important;
+}
+
+.article-title {
+  font-size: clamp(46px, 6vw, 72px) !important;
+  line-height: 0.96 !important;
+}
+
+.article-excerpt {
+  margin-top: 26px !important;
+  line-height: 1.65 !important;
+}
+
+.article-meta {
+  margin-top: 32px !important;
+  margin-bottom: 42px !important;
+}
+
+.admin-row,
+.editor-top {
+  gap: 32px !important;
+  margin-bottom: 38px !important;
+}
+
+.admin-actions,
+.editor-actions {
+  gap: 14px !important;
+}
+
+.stat-grid {
+  gap: 18px !important;
+  margin: 34px 0 !important;
+}
+
+.draft-list {
+  gap: 16px !important;
+}
+
+.draft-item,
+.empty-state,
+.notice {
+  padding: 22px !important;
+}
+
+@media (max-width: 720px) {
+  .site-nav {
+    min-height: auto !important;
+    padding: 22px 20px !important;
+  }
+
+  .home-hero-grid,
+  .section-container,
+  .newsletter-grid,
+  .newsletter-page,
+  .article-shell {
+    padding-top: 54px !important;
+    padding-bottom: 54px !important;
+  }
+
+  .home-hero-title,
+  .page-title {
+    font-size: 48px !important;
+  }
+}
