@@ -15,8 +15,34 @@ const topics = [
   'weekly plan for publishing helpful beginner blog content',
 ];
 
+async function makeUniqueSlug(baseSlug: string) {
+  const cleanBaseSlug =
+    slugify(baseSlug || 'hustlepath-draft', {
+      lower: true,
+      strict: true,
+    }) || 'hustlepath-draft';
+
+  let slug = cleanBaseSlug;
+  let counter = 2;
+
+  while (true) {
+    const existing = await sql`
+      select id
+      from posts
+      where slug = ${slug}
+      limit 1
+    `;
+
+    if (existing.length === 0) return slug;
+
+    slug = `${cleanBaseSlug}-${counter}`;
+    counter++;
+  }
+}
+
 export async function generateDailyDraft() {
   const topic = topics[new Date().getUTCDate() % topics.length];
+
   const existing = await sql`
     select title, slug, category, excerpt
     from posts
@@ -34,7 +60,8 @@ export async function generateDailyDraft() {
     messages: [
       {
         role: 'system',
-        content: 'You write practical HustlePathDaily articles. Be realistic, specific, beginner-friendly, and avoid income guarantees. Return JSON only.',
+        content:
+          'You write practical HustlePathDaily articles. Be realistic, specific, beginner-friendly, and avoid income guarantees. Return JSON only.',
       },
       {
         role: 'user',
@@ -62,15 +89,36 @@ body should be clean markdown with bullet lists, blockquote callouts, and scanna
   });
 
   const data = JSON.parse(completion.choices[0].message.content || '{}');
+
   const title = String(data.title || 'Untitled HustlePath Draft');
-  const slug = slugify(String(data.slug || title), { lower: true, strict: true });
-  const excerpt = String(data.excerpt || 'A practical beginner guide from HustlePathDaily.');
+
+  const baseSlug = slugify(String(data.slug || title), {
+    lower: true,
+    strict: true,
+  });
+
+  const slug = await makeUniqueSlug(baseSlug);
+
+  const excerpt = String(
+    data.excerpt || 'A practical beginner guide from HustlePathDaily.'
+  );
+
   const body = formatArticleMarkdown(String(data.body || ''));
   const seoTitle = String(data.seo_title || title);
   const seoDescription = String(data.seo_description || excerpt);
   const primaryKeyword = String(data.primary_keyword || '');
-  const seo = scorePost({ title, excerpt, body, seoTitle, seoDescription, primaryKeyword });
-  const autoPublish = process.env.AUTO_PUBLISH_DAILY_DRAFTS === 'true' && seo.score >= 85;
+
+  const seo = scorePost({
+    title,
+    excerpt,
+    body,
+    seoTitle,
+    seoDescription,
+    primaryKeyword,
+  });
+
+  const autoPublish =
+    process.env.AUTO_PUBLISH_DAILY_DRAFTS === 'true' && seo.score >= 85;
 
   const [post] = await sql`
     insert into posts (
@@ -95,6 +143,8 @@ body should be clean markdown with bullet lists, blockquote callouts, and scanna
         seo_checks: seo.checks,
         internal_links: data.internal_links || [],
         auto_published: autoPublish,
+        base_slug: baseSlug,
+        final_slug: slug,
       })}::jsonb,
       ${autoPublish ? new Date().toISOString() : null}
     ) returning id, status, quality_score
