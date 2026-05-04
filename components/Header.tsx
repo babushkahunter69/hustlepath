@@ -13,6 +13,7 @@ export default function Header() {
           <Link href="/blog">Blog</Link>
           <Link href="/#topics">Topics</Link>
           <Link href="/#newsletter">Newsletter</Link>
+          <Link href="/admin/login" className="rounded-full bg-black px-4 py-2 text-white transition hover:bg-orange-600">Admin</Link>
         </nav>
       </div>
     </header>

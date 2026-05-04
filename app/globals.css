@@ -18,3 +18,229 @@ body {
 .prose p { color: #3f3a34; line-height: 1.85; margin: 1.1rem 0; font-size: 1.08rem; }
 .prose ul { margin: 1rem 0; padding-left: 1.4rem; }
 .prose li { margin: .45rem 0; line-height: 1.75; color: #3f3a34; }
+
+/* Admin UI */
+.admin-shell {
+  min-height: calc(100vh - 86px);
+  padding: 56px 24px;
+  background:
+    radial-gradient(circle at top left, rgba(234, 88, 12, 0.12), transparent 28rem),
+    #f8f3ea;
+}
+
+.login-card,
+.admin-panel {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  background: #fffaf2;
+  border: 1px solid rgba(20, 18, 15, 0.1);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(20, 18, 15, 0.12);
+  padding: 34px;
+}
+
+.admin-panel.wide {
+  width: min(100%, 980px);
+}
+
+.login-kicker,
+.admin-topline {
+  color: #ea580c;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  margin-bottom: 10px;
+}
+
+.login-card h1,
+.admin-panel h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.login-subtitle,
+.admin-muted,
+.draft-item p {
+  color: #6f665c;
+  margin: 12px 0 0;
+  line-height: 1.6;
+}
+
+.login-form,
+.editor-form {
+  margin-top: 28px;
+  display: grid;
+  gap: 16px;
+}
+
+.login-form label,
+.editor-form label {
+  display: grid;
+  gap: 8px;
+  color: #312c26;
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.login-form input,
+.editor-form input,
+.editor-form textarea {
+  width: 100%;
+  border: 1px solid rgba(20, 18, 15, 0.16);
+  border-radius: 14px;
+  background: #fff;
+  color: #14120f;
+  padding: 14px 15px;
+  font: inherit;
+  outline: none;
+}
+
+.editor-form textarea {
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.login-form input:focus,
+.editor-form input:focus,
+.editor-form textarea:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12);
+}
+
+.login-form button,
+.editor-form button,
+.primary-link,
+.secondary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 18px;
+  background: #14120f;
+  color: white;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.login-form button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.form-error {
+  margin: 0;
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 26px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 28px 0;
+}
+
+.stat-card {
+  background: #f8f3ea;
+  border: 1px solid rgba(20, 18, 15, 0.08);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.stat-card span {
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.stat-card p {
+  margin: 4px 0 0;
+  color: #6f665c;
+  font-weight: 700;
+}
+
+.admin-actions,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.secondary-link,
+.editor-form .publish-button {
+  background: #fff;
+  color: #14120f;
+  border: 1px solid rgba(20, 18, 15, 0.14);
+}
+
+.secondary-link.small {
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.editor-form .danger-button {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.notice,
+.empty-state {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  border-radius: 18px;
+  padding: 16px;
+  font-weight: 700;
+}
+
+.draft-list {
+  display: grid;
+  gap: 12px;
+}
+
+.draft-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(20, 18, 15, 0.08);
+  text-decoration: none;
+  color: inherit;
+}
+
+.draft-item h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.draft-item span {
+  border-radius: 999px;
+  background: #f8f3ea;
+  padding: 7px 10px;
+  color: #6f665c;
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@media (max-width: 700px) {
+  .admin-shell { padding: 28px 16px; }
+  .login-card, .admin-panel { padding: 24px; border-radius: 22px; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .admin-row, .draft-item { align-items: flex-start; flex-direction: column; }
+}
