@@ -101,7 +101,7 @@ function markdownToHtml(markdown: string, validSlugs: Set<string>) {
     // Lists
     .replace(/^\s{0,3}-\s+(.*)$/gm, '<li>$1</li>');
 
-  html = html.replace(/(?:<li>.*?<\/li>\s*)+/gs, (match) => {
+  html = html.replace(/(?:<li>[\s\S]*?<\/li>\s*)+/g, (match) => {
     const items = match.replace(/\n+/g, '');
     return `<ul>${items}</ul>`;
   });
