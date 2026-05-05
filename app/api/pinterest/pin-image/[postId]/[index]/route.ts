@@ -1,0 +1,15 @@
+import { sql } from '@/lib/db';
+export const dynamic = 'force-dynamic';
+function escapeXml(value: string) { return String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&apos;'); }
+function wrapText(text: string, maxChars = 18, maxLines = 5) { const words = String(text || '').split(/\s+/).filter(Boolean); const lines: string[] = []; let line = ''; for (const word of words) { const next = line ? `${line} ${word}` : word; if (next.length > maxChars && line) { lines.push(line); line = word; } else { line = next; } if (lines.length === maxLines) break; } if (line && lines.length < maxLines) lines.push(line); return lines; }
+export async function GET(_request: Request, { params }: { params: Promise<{ postId: string; index: string }> }) {
+  const { postId, index } = await params;
+  const [post] = await sql`select title, category, pinterest_meta from posts where id = ${postId} limit 1`;
+  const pins = Array.isArray(post?.pinterest_meta?.pins) ? post.pinterest_meta.pins : [];
+  const pin = pins[Number(index)] || {};
+  const title = String(pin.title || post?.title || 'HustlePathDaily');
+  const category = String(post?.category || pin.angle || 'Online income');
+  const lines = wrapText(title);
+  const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff7ec"/><stop offset="1" stop-color="#f3dfc3"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="26" stdDeviation="28" flood-color="#2a1d10" flood-opacity="0.16"/></filter></defs><rect width="1000" height="1500" fill="url(#bg)"/><circle cx="830" cy="210" r="110" fill="#ff5a1f" opacity="0.12"/><circle cx="130" cy="1240" r="170" fill="#111111" opacity="0.07"/><rect x="90" y="130" width="820" height="1240" rx="54" fill="#fffaf3" filter="url(#shadow)"/><text x="135" y="220" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" letter-spacing="6" fill="#ff4b00">HUSTLEPATHDAILY</text><text x="135" y="300" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="900" letter-spacing="4" fill="#6d6258">${escapeXml(category).toUpperCase()}</text>${lines.map((line, i) => `<text x="135" y="${470 + i * 115}" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="900" fill="#111111">${escapeXml(line)}</text>`).join('')}<rect x="135" y="1060" width="470" height="92" rx="46" fill="#111111"/><text x="178" y="1120" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#ffffff">Read the full guide</text><text x="135" y="1260" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" fill="#4d443d">Beginner-friendly ideas, simple steps, no hype.</text></svg>`;
+  return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' } });
+}

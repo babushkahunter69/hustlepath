@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { sql } from '@/lib/db';
+import { injectMonetizationBlocks, parseKeywords, scoreProductMatch, type Product } from '@/lib/monetization';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -143,7 +144,7 @@ export default async function BlogPostPage({
   const { slug } = await params;
 
   const rows = await sql`
-    select id, title, slug, excerpt, body, category, published_at, created_at
+    select id, title, slug, excerpt, body, category, published_at, created_at, primary_keyword, related_keywords
     from posts
     where slug = ${slug}
       and status = 'published'
@@ -178,6 +179,39 @@ export default async function BlogPostPage({
     limit 3
   `;
 
+  let matchedProduct: Product | null = null;
+
+  try {
+    const products = await sql`
+      select id, title, description, image_url, target_url, cta_label, keywords, status
+      from products
+      where status = 'active'
+      order by updated_at desc nulls last, created_at desc
+      limit 25
+    `;
+
+    const relatedKeywords = parseKeywords(post.related_keywords);
+    const postText = [
+      post.title,
+      post.excerpt,
+      post.category,
+      post.primary_keyword,
+      relatedKeywords.join(' '),
+      String(post.body || '').slice(0, 2500),
+    ].join(' ');
+
+    matchedProduct = (products as Product[])
+      .map((product) => ({ product, score: scoreProductMatch(product, postText) }))
+      .sort((a, b) => b.score - a.score)[0]?.product || null;
+  } catch {
+    matchedProduct = null;
+  }
+
+  const articleHtml = injectMonetizationBlocks(
+    markdownToHtml(String(post.body || ''), validSlugs),
+    matchedProduct
+  );
+
   const publishedDate = post.published_at || post.created_at;
   const formattedDate = publishedDate
     ? new Date(publishedDate).toISOString().slice(0, 10)
@@ -201,7 +235,7 @@ export default async function BlogPostPage({
         <div
           className="article-content"
           dangerouslySetInnerHTML={{
-            __html: markdownToHtml(String(post.body || ''), validSlugs),
+            __html: articleHtml,
           }}
         />
 

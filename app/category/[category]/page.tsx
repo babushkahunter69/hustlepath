@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 function slugifyCategory(category: string) {
-  return category
+  return String(category || '')
+    .trim()
     .toLowerCase()
     .replace(/&/g, 'and')
     .replace(/[^a-z0-9]+/g, '-')
@@ -14,8 +15,10 @@ function slugifyCategory(category: string) {
 }
 
 function titleCase(text: string) {
-  return text
-    .split('-')
+  return String(text || '')
+    .replace(/-/g, ' ')
+    .split(' ')
+    .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 }
@@ -31,58 +34,45 @@ export default async function CategoryPage({
   params: Promise<{ category: string }>;
 }) {
   const { category } = await params;
+  const requestedSlug = slugifyCategory(decodeURIComponent(category));
 
-  const categories = await sql`
-    select distinct category
+  const publishedPosts = await sql`
+    select id, title, slug, excerpt, category, body, published_at, created_at
     from posts
     where status = 'published'
       and category is not null
       and slug is not null
-      and body is not null
-      and length(body) > 300
+    order by published_at desc nulls last, created_at desc
   `;
 
-  const matchingCategory = (categories as any[])
-    .map((row) => String(row.category || ''))
-    .find((name) => slugifyCategory(name) === category);
+  const matchingPosts = (publishedPosts as any[]).filter((post) => {
+    return slugifyCategory(post.category) === requestedSlug;
+  });
 
-  if (!matchingCategory) {
+  if (matchingPosts.length === 0) {
     notFound();
   }
 
-  const posts = await sql`
-    select id, title, slug, excerpt, category, body, published_at, created_at
-    from posts
-    where status = 'published'
-      and category = ${matchingCategory}
-      and slug is not null
-      and body is not null
-      and length(body) > 300
-    order by published_at desc nulls last, created_at desc
-  `;
+  const matchingCategory = String(matchingPosts[0].category || titleCase(requestedSlug));
 
   return (
     <main className="page-shell">
       <section className="section-container">
         <p className="eyebrow">Category</p>
-        <h1 className="page-title">{matchingCategory || titleCase(category)}</h1>
+        <h1 className="page-title">{matchingCategory}</h1>
 
-        {(posts as any[]).length > 0 ? (
-          <div className="post-grid">
-            {(posts as any[]).map((post) => (
-              <Link key={post.id} href={`/blog/${post.slug}`} className="post-card flat">
-                <div className="post-card-body">
-                  <p className="post-card-category">{post.category}</p>
-                  <h3>{post.title}</h3>
-                  <p>{post.excerpt}</p>
-                  <span>{estimateReadTime(post.body)}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">No published posts in this category yet.</div>
-        )}
+        <div className="post-grid">
+          {matchingPosts.map((post) => (
+            <Link key={post.id} href={`/blog/${post.slug}`} className="post-card flat">
+              <div className="post-card-body">
+                <p className="post-card-category">{post.category}</p>
+                <h3>{post.title}</h3>
+                <p>{post.excerpt}</p>
+                <span>{estimateReadTime(post.body)}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
       </section>
     </main>
   );
@@ -94,9 +84,10 @@ export async function generateMetadata({
   params: Promise<{ category: string }>;
 }) {
   const { category } = await params;
+  const label = titleCase(decodeURIComponent(category));
 
   return {
-    title: `${titleCase(category)} Guides | HustlePathDaily`,
-    description: `Read beginner-friendly guides about ${titleCase(category).toLowerCase()}.`,
+    title: `${label} Guides | HustlePathDaily`,
+    description: `Read beginner-friendly guides about ${label.toLowerCase()}.`,
   };
 }

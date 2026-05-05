@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
+import { attachPinUrls, generatePinterestPins, normalizePinterestMeta } from '@/lib/pinterest';
+import { parseKeywords } from '@/lib/monetization';
 
 export default async function DraftEditorPage({
   params,
@@ -62,6 +64,50 @@ export default async function DraftEditorPage({
       redirect(`/admin/drafts/${post.id}`);
     }
 
+    if (intent === 'generate_pins') {
+      const pins = await generatePinterestPins({
+        title: title || String(post.title || ''),
+        excerpt: excerpt || String(post.excerpt || ''),
+        category: category || String(post.category || ''),
+        primaryKeyword: String(post.primary_keyword || ''),
+        relatedKeywords: parseKeywords(post.related_keywords),
+        slug: slug || String(post.slug || ''),
+        count: 8,
+      });
+
+      const meta = normalizePinterestMeta(post.pinterest_meta, attachPinUrls(String(post.id), pins));
+
+      await sql`
+        update posts
+        set pinterest_meta = ${JSON.stringify(meta)}::jsonb,
+            updated_at = now()
+        where id = ${post.id}
+      `;
+
+      redirect(`/admin/drafts/${post.id}`);
+    }
+
+
+    if (intent === 'mark_pin_posted') {
+      const pinIndex = Number(formData.get('pin_index'));
+      const existingMeta = post.pinterest_meta && typeof post.pinterest_meta === 'object' ? post.pinterest_meta : {};
+      const existingPins = Array.isArray(existingMeta.pins) ? existingMeta.pins : [];
+      const updatedPins = existingPins.map((pin: any, index: number) => (
+        index === pinIndex
+          ? { ...pin, status: 'posted', posted_at: new Date().toISOString() }
+          : pin
+      ));
+
+      await sql`
+        update posts
+        set pinterest_meta = ${JSON.stringify({ ...existingMeta, pins: updatedPins, updated_at: new Date().toISOString() })}::jsonb,
+            updated_at = now()
+        where id = ${post.id}
+      `;
+
+      redirect(`/admin/drafts/${post.id}`);
+    }
+
     if (intent === 'approve') {
       await sql`
         update posts
@@ -103,6 +149,8 @@ export default async function DraftEditorPage({
   }
 
   const score = Number(post.quality_score || 50);
+  const pinterestMeta = post.pinterest_meta && typeof post.pinterest_meta === 'object' ? post.pinterest_meta : {};
+  const pins = Array.isArray(pinterestMeta.pins) ? pinterestMeta.pins : [];
 
   return (
     <main className="admin-page">
@@ -186,6 +234,15 @@ export default async function DraftEditorPage({
               <button
                 type="submit"
                 name="intent"
+                value="generate_pins"
+                className="btn btn-orange"
+              >
+                Generate pins
+              </button>
+
+              <button
+                type="submit"
+                name="intent"
                 value="approve"
                 className="btn btn-light"
               >
@@ -239,6 +296,46 @@ export default async function DraftEditorPage({
                 Use Polish with AI to improve formatting, SEO, bullets,
                 callouts, pro tips, and internal links.
               </p>
+            </div>
+
+            <div className="pin-panel">
+              <div className="pin-panel-head">
+                <div>
+                  <h2>Pinterest pins</h2>
+                  <p>{pins.length} draft pin{pins.length === 1 ? '' : 's'} ready</p>
+                </div>
+              </div>
+
+              {pins.length === 0 && (
+                <p className="muted">Generate pins after the article title, excerpt, and slug look right.</p>
+              )}
+
+              {pins.map((pin: any, index: number) => (
+                <div key={`${pin.title}-${index}`} className="pin-card">
+                  <span>{pin.angle || 'pin'} · {pin.status || 'draft'}</span>
+                  <strong>{pin.title}</strong>
+                  <p>{pin.description}</p>
+                  <div className="pin-tools">
+                    <a href={pin.image_url || `/api/pinterest/pin-image/${post.id}/${index}`} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open pin image</a>
+                    <a href={pin.tracked_url || `/go/pin/${post.id}/${index}`} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test tracked link</a>
+                  </div>
+                  <form action={handleEditorAction} className="pin-status-form">
+                    <input type="hidden" name="pin_index" value={index} />
+                    <button type="submit" name="intent" value="mark_pin_posted" className="btn btn-dark small" disabled={pin.status === 'posted'}>
+                      {pin.status === 'posted' ? 'Posted' : 'Mark as posted'}
+                    </button>
+                  </form>
+                  <details>
+                    <summary>Image prompt</summary>
+                    <p>{pin.image_prompt}</p>
+                  </details>
+                  <details>
+                    <summary>Pinterest fields</summary>
+                    <p><strong>Destination:</strong> {pin.tracked_url || `/go/pin/${post.id}/${index}`}</p>
+                    <p><strong>Image:</strong> {pin.image_url || `/api/pinterest/pin-image/${post.id}/${index}`}</p>
+                  </details>
+                </div>
+              ))}
             </div>
 
             <div className="checklist">

@@ -1423,3 +1423,139 @@ p {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* ===== Pinterest + monetization system ===== */
+.monetization-card,
+.article-email-cta {
+  margin: 34px 0;
+  border: 1px solid #eadfd0;
+  border-radius: 24px;
+  background: #fff8ef;
+  padding: 22px;
+  box-shadow: 0 18px 44px rgba(38, 29, 20, 0.08);
+}
+.monetization-card {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 20px;
+  align-items: center;
+}
+.monetization-card img {
+  width: 132px;
+  height: 132px;
+  object-fit: cover;
+  border-radius: 18px;
+  background: #f3eadf;
+}
+.monetization-eyebrow {
+  margin: 0 0 8px !important;
+  color: #f04a00 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.monetization-card h2,
+.article-email-cta h2 {
+  margin: 0 0 10px !important;
+  font-size: 25px !important;
+  line-height: 1.05 !important;
+  font-weight: 900 !important;
+}
+.monetization-card p,
+.article-email-cta p {
+  margin: 0 0 14px !important;
+  color: #5f564d !important;
+}
+.monetization-card a,
+.article-email-cta a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #111;
+  color: #fff !important;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none !important;
+}
+.pin-panel {
+  border: 1px solid #eadfd0;
+  border-radius: 22px;
+  background: #fff;
+  padding: 18px;
+  margin-top: 18px;
+}
+.pin-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.pin-panel h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  line-height: 1.1;
+}
+.pin-panel p {
+  margin: 0;
+  color: #6f675e;
+  line-height: 1.45;
+}
+.pin-card {
+  border: 1px solid #eee1d3;
+  border-radius: 18px;
+  padding: 14px;
+  background: #fff8ef;
+  margin-top: 12px;
+}
+.pin-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: #f04a00;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.pin-card strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+.pin-card details {
+  margin-top: 10px;
+  color: #6f675e;
+}
+.product-form,
+.product-editor {
+  border: 1px solid #eadfd0;
+  border-radius: 22px;
+  background: #fff;
+  padding: 20px;
+}
+.product-editor {
+  margin-top: 16px;
+}
+.product-list {
+  display: grid;
+  gap: 14px;
+}
+@media (max-width: 720px) {
+  .monetization-card { grid-template-columns: 1fr; }
+  .monetization-card img { width: 100%; height: auto; max-height: 220px; }
+}
+
+/* ===== Pinterest + monetization fixes ===== */
+.monetization-card.no-image { display: block; }
+.monetization-card.no-image > div { max-width: 620px; }
+.monetization-card.no-image h2,
+.monetization-card.no-image p { max-width: 620px; }
+.pin-tools,
+.pin-status-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn.small,
+.secondary-link.small,
+.primary-link.small { min-height: auto; padding: 8px 11px; font-size: 12px; line-height: 1; }
