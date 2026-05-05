@@ -13,9 +13,6 @@ export default function Header() {
           <Link href="/blog">Blog</Link>
           <Link href="/topics">Topics</Link>
           <Link href="/newsletter">Newsletter</Link>
-          <Link href="/admin/login" className="admin-link">
-            Admin
-          </Link>
         </div>
       </nav>
     </header>
