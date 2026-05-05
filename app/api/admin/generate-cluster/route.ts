@@ -25,10 +25,8 @@ export async function POST(req: Request) {
       const post = await generateDailyDraft({
         topic: topic.title,
         category: topic.category,
-        niche: topic.niche,
         clusterId,
         clusterRole: topic.clusterRole as 'pillar' | 'supporting',
-        source: 'admin-cluster-generator',
       });
 
       posts.push(post);

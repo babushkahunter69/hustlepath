@@ -91,6 +91,15 @@ export default async function DraftEditorPage({
 
       redirect('/admin/drafts');
     }
+
+    if (intent === 'delete') {
+      await sql`
+        delete from posts
+        where id = ${post.id}
+      `;
+
+      redirect('/admin/drafts');
+    }
   }
 
   const score = Number(post.quality_score || 50);
@@ -196,9 +205,18 @@ export default async function DraftEditorPage({
                 type="submit"
                 name="intent"
                 value="reject"
-                className="btn btn-danger"
+                className="btn btn-light"
               >
                 Reject
+              </button>
+
+              <button
+                type="submit"
+                name="intent"
+                value="delete"
+                className="btn btn-danger"
+              >
+                Delete
               </button>
             </div>
           </form>

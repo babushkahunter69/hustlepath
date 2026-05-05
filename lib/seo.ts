@@ -1,18 +1,18 @@
 export type SeoScore = {
   score: number;
-  checks: { label: string; passed: boolean; detail: string; points: number }[];
+  checks: { label: string; passed: boolean; detail: string }[];
 };
 
 function wordCount(text: string) {
-  return text.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+  return text
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[#>*_\-[\]()`]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean).length;
 }
 
 function countMatches(text: string, pattern: RegExp) {
   return (text.match(pattern) || []).length;
-}
-
-function includesKeyword(text: string, keyword: string) {
-  return Boolean(keyword && text.toLowerCase().includes(keyword.toLowerCase()));
 }
 
 export function scorePost(input: {
@@ -29,81 +29,86 @@ export function scorePost(input: {
   const seoTitle = input.seoTitle || title;
   const seoDescription = input.seoDescription || excerpt;
   const primaryKeyword = (input.primaryKeyword || '').toLowerCase().trim();
+
   const bodyWords = wordCount(body);
-  const h2Count = countMatches(body, /^##\s+/gm);
-  const h3Count = countMatches(body, /^###\s+/gm);
-  const bulletCount = countMatches(body, /^[-*]\s+/gm);
-  const hasNumberedList = /^\d+\.\s+/gm.test(body);
-  const internalLinkCount = countMatches(body, /\[[^\]]+\]\(\/blog\//g);
-  const hasFaq = /##\s+faq|frequently asked questions/i.test(body);
+  const fullText = `${title} ${excerpt} ${body}`.toLowerCase();
+  const firstChunk = body.slice(0, 900).toLowerCase();
+
+  const h2Count = countMatches(body, /^## /gm);
+  const h3Count = countMatches(body, /^### /gm);
+  const bulletCount = countMatches(body, /^- /gm);
+  const internalLinkCount = countMatches(body, /\]\(\/blog\//g);
 
   const checks = [
     {
       label: 'Title length',
-      passed: title.length >= 35 && title.length <= 70,
-      detail: `${title.length} characters. Aim for 35 to 70.`,
-      points: 10,
+      passed: title.length >= 35 && title.length <= 75,
+      detail: `${title.length} characters. Aim for 35 to 75.`,
     },
     {
       label: 'SEO title',
-      passed: seoTitle.length >= 35 && seoTitle.length <= 70,
+      passed: seoTitle.length >= 35 && seoTitle.length <= 75,
       detail: `${seoTitle.length} characters. Keep it clear and clickable.`,
-      points: 10,
     },
     {
       label: 'Meta description',
-      passed: seoDescription.length >= 120 && seoDescription.length <= 160,
-      detail: `${seoDescription.length} characters. Aim for 120 to 160.`,
-      points: 10,
-    },
-    {
-      label: 'Excerpt',
-      passed: excerpt.length >= 120 && excerpt.length <= 240,
-      detail: `${excerpt.length} characters. Aim for 120 to 240.`,
-      points: 5,
+      passed: seoDescription.length >= 120 && seoDescription.length <= 165,
+      detail: `${seoDescription.length} characters. Aim for 120 to 165.`,
     },
     {
       label: 'Article depth',
       passed: bodyWords >= 1200,
-      detail: `${bodyWords} words. Aim for 1200+ for a legit guide.`,
-      points: 15,
+      detail: `${bodyWords} words. Aim for 1200+ for a strong guide.`,
     },
     {
       label: 'Keyword usage',
       passed:
         Boolean(primaryKeyword) &&
-        includesKeyword(title, primaryKeyword) &&
-        includesKeyword(body.slice(0, 700), primaryKeyword) &&
-        includesKeyword(body, primaryKeyword),
-      detail: primaryKeyword ? `Primary keyword: ${primaryKeyword}` : 'Add a primary keyword.',
-      points: 15,
+        fullText.includes(primaryKeyword) &&
+        firstChunk.includes(primaryKeyword),
+      detail: primaryKeyword
+        ? `Primary keyword: ${primaryKeyword}`
+        : 'Add a primary keyword.',
     },
     {
-      label: 'Heading structure',
-      passed: h2Count >= 5 && h2Count <= 9 && h3Count >= 2,
-      detail: `${h2Count} H2 sections and ${h3Count} H3 sections.`,
-      points: 10,
+      label: 'H2 structure',
+      passed: h2Count >= 5,
+      detail: `${h2Count} H2 sections. Aim for at least 5.`,
     },
     {
-      label: 'Helpful formatting',
-      passed: bulletCount >= 8 && hasNumberedList,
-      detail: `${bulletCount} bullets. Numbered list: ${hasNumberedList ? 'yes' : 'no'}.`,
-      points: 10,
+      label: 'H3 structure',
+      passed: h3Count >= 2,
+      detail: `${h3Count} H3 sections. Aim for at least 2.`,
+    },
+    {
+      label: 'Helpful bullets',
+      passed: bulletCount >= 8,
+      detail: `${bulletCount} bullet points. Aim for at least 8.`,
+    },
+    {
+      label: 'FAQ section',
+      passed: /## .*faq|## .*frequently asked questions/i.test(body),
+      detail: 'Include a FAQ section.',
+    },
+    {
+      label: 'Conclusion',
+      passed: /## .*conclusion|## .*final thoughts|## .*next steps/i.test(body),
+      detail: 'Include a conclusion or next steps section.',
     },
     {
       label: 'Internal links',
-      passed: internalLinkCount >= 2,
-      detail: `${internalLinkCount} internal links. Aim for 2 to 4.`,
-      points: 10,
+      passed: internalLinkCount >= 1,
+      detail: `${internalLinkCount} internal links found.`,
     },
     {
-      label: 'Trust and skimmability',
-      passed: /Pro tip/i.test(body) && /Quick win/i.test(body) && hasFaq,
-      detail: `Pro tip, Quick win, and FAQ present: ${/Pro tip/i.test(body) && /Quick win/i.test(body) && hasFaq ? 'yes' : 'no'}.`,
-      points: 5,
+      label: 'Callouts',
+      passed: body.includes('> **Pro tip:**') && body.includes('> **Quick win:**'),
+      detail: 'Include Pro tip and Quick win callouts.',
     },
   ];
 
-  const score = checks.reduce((total, check) => total + (check.passed ? check.points : 0), 0);
+  const passed = checks.filter((check) => check.passed).length;
+  const score = Math.round((passed / checks.length) * 100);
+
   return { score, checks };
 }

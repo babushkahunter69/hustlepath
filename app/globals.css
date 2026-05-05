@@ -1239,3 +1239,187 @@ p {
     font-size: 48px !important;
   }
 }
+
+/* ===== Tightened article spacing ===== */
+.article-content {
+  max-width: 720px;
+  margin: 0 auto;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+/* Headings */
+.article-content h1 {
+  margin: 0 0 20px;
+  font-size: clamp(34px, 5vw, 48px);
+}
+
+.article-content h2 {
+  margin: 40px 0 14px;
+  font-size: clamp(26px, 3.5vw, 34px);
+}
+
+.article-content h3 {
+  margin: 28px 0 10px;
+  font-size: 22px;
+}
+
+.article-content h4,
+.article-content h5,
+.article-content h6 {
+  margin: 22px 0 8px;
+  font-size: 18px;
+}
+
+/* Paragraphs */
+.article-content p {
+  margin: 0 0 16px;
+}
+
+/* Lists */
+.article-content ul,
+.article-content ol {
+  margin: 14px 0 20px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.article-content li {
+  padding: 14px 18px 14px 40px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  position: relative;
+}
+
+.article-content li::before {
+  content: "•";
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  color: var(--orange);
+  font-weight: 900;
+}
+
+/* Blockquote (Pro tip box) */
+.article-content blockquote {
+  margin: 22px 0;
+  padding: 18px 20px;
+  border-left: 5px solid var(--orange);
+  border-radius: 14px;
+  background: #fff4df;
+}
+
+/* Remove divider spacing completely */
+.article-content hr {
+  display: none;
+}
+
+.article-content table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 22px 0 30px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.article-content th,
+.article-content td {
+  padding: 16px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.article-content th {
+  background: #efe2d3;
+  font-weight: 950;
+}
+
+.article-content tr:last-child td {
+  border-bottom: 0;
+}
+
+.article-content td {
+  color: #2b2824;
+}
+
+/* ===== Final table rendering fix ===== */
+.article-content table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  margin: 18px 0 28px !important;
+  overflow: hidden !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 18px !important;
+  background: white !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+}
+
+.article-content thead th {
+  background: #efe2d3 !important;
+  color: var(--ink) !important;
+  font-weight: 950 !important;
+}
+
+.article-content th,
+.article-content td {
+  padding: 14px 16px !important;
+  text-align: left !important;
+  vertical-align: top !important;
+  border-right: 1px solid var(--line) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+.article-content th:last-child,
+.article-content td:last-child {
+  border-right: 0 !important;
+}
+
+.article-content tbody tr:last-child td {
+  border-bottom: 0 !important;
+}
+
+.article-content td {
+  color: #2b2824 !important;
+}
+
+@media (max-width: 720px) {
+  .article-content table {
+    display: block !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+  }
+}
+
+/* ===== Redbubble / creator resource callout ===== */
+.article-content .promo-box,
+.article-content blockquote {
+  margin: 22px 0 !important;
+  padding: 18px 20px !important;
+  border-left: 5px solid var(--orange) !important;
+  border-radius: 14px !important;
+  background: #fff4df !important;
+  font-weight: 750 !important;
+}
+
+.article-content blockquote strong:first-child {
+  font-weight: 950;
+}
+
+.article-content blockquote a,
+.article-content .promo-box a {
+  color: var(--orange);
+  font-weight: 950;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

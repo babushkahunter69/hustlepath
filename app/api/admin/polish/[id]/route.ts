@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import slugify from 'slugify';
 import { sql } from '@/lib/db';
+import { scorePost } from '@/lib/seo';
+import { formatArticleMarkdown } from '@/lib/articleFormat';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -80,6 +82,9 @@ Improve the article so it is:
 - Includes bullet lists
 - Includes callouts (Pro tip, Quick win)
 
+Do not add any /blog internal links unless they already exist in the current article.
+Never invent URLs.
+
 Return JSON only.
 `,
         },
@@ -107,17 +112,34 @@ Return JSON only.
 
     const slug = await makeUniqueSlug(baseSlug, id);
 
+    const excerpt = polished.excerpt || post.excerpt;
+    const formattedBody = formatArticleMarkdown(String(polished.body || post.body || ''));
+    const seoTitle = polished.seo_title || title;
+    const seoDescription = polished.seo_description || polished.excerpt || post.excerpt;
+    const primaryKeyword = polished.primary_keyword || post.primary_keyword || '';
+    const seo = scorePost({
+      title,
+      excerpt,
+      body: formattedBody,
+      seoTitle,
+      seoDescription,
+      primaryKeyword,
+    });
+
     await sql`
       update posts
       set
         title = ${title},
         slug = ${slug},
-        excerpt = ${polished.excerpt || post.excerpt},
-        body = ${polished.body || post.body},
-        seo_title = ${polished.seo_title || title},
-        seo_description = ${polished.seo_description || polished.excerpt || post.excerpt},
+        excerpt = ${excerpt},
+        body = ${formattedBody},
+        seo_title = ${seoTitle},
+        seo_description = ${seoDescription},
+        primary_keyword = ${primaryKeyword},
         category = ${polished.category || post.category},
-        quality_score = 85,
+        quality_score = ${seo.score},
+        risk_level = ${seo.score >= 85 ? 'low' : seo.score >= 70 ? 'medium' : 'needs_work'},
+        workflow_meta = coalesce(workflow_meta, '{}'::jsonb) || ${JSON.stringify({ seo_checks: seo.checks, polished_at: new Date().toISOString() })}::jsonb,
         status = 'needs_review',
         updated_at = now()
       where id = ${id}

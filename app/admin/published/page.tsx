@@ -29,15 +29,38 @@ export default async function PublishedPage() {
 
         {error && <div className="notice">Database not ready: {error}</div>}
 
+        {!error && posts.length === 0 && (
+          <div className="empty-state">No published posts yet.</div>
+        )}
+
         <div className="draft-list">
           {posts.map((post) => (
-            <Link key={post.id} href={`/blog/${post.slug}`} className="draft-item">
+            <div key={post.id} className="draft-item">
               <div>
                 <h2>{post.title || 'Untitled post'}</h2>
-                <p>Published {post.published_at ? new Date(post.published_at).toLocaleString() : 'recently'}</p>
+                <p>
+                  Published{' '}
+                  {post.published_at
+                    ? new Date(post.published_at).toLocaleString()
+                    : 'recently'}
+                </p>
               </div>
-              <span>view</span>
-            </Link>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <Link href={`/blog/${post.slug}`} className="secondary-link small">
+                  View
+                </Link>
+                <form action={`/api/admin/delete-post/${post.id}`} method="POST">
+                  <button
+                    type="submit"
+                    className="secondary-link small"
+                    style={{ color: '#dc2626' }}
+                  >
+                    Delete
+                  </button>
+                </form>
+              </div>
+            </div>
           ))}
         </div>
       </section>

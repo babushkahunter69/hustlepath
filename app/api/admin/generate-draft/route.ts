@@ -1,23 +1,12 @@
-import { generateDailyDraft } from '@/lib/aiDraft';
 import { NextResponse } from 'next/server';
+import { generateDailyDraft } from '@/lib/aiDraft';
 
-export async function GET(req: Request) {
-  return NextResponse.redirect(new URL('/admin', req.url), {
-    status: 303,
-  });
-}
-
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const post = await generateDailyDraft();
-
-    return NextResponse.redirect(
-      new URL(`/admin/drafts/${post.id}`, req.url),
-      { status: 303 }
-    );
+    return NextResponse.json({ ok: true, post });
   } catch (err) {
     console.error('GENERATE DRAFT ERROR:', err);
-
     return NextResponse.json(
       { error: 'Failed to generate draft' },
       { status: 500 }

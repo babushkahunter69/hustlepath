@@ -1,6 +1,16 @@
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 
+async function generateDraftAction() {
+  'use server';
+
+  const { generateDailyDraft } = await import('@/lib/aiDraft');
+  const post = await generateDailyDraft();
+
+  const { redirect } = await import('next/navigation');
+  redirect(`/admin/drafts/${post.id}`);
+}
+
 export default async function Admin() {
   let stats = { drafts: 0, review: 0, approved: 0, published: 0 };
   let recent: any[] = [];
@@ -38,16 +48,21 @@ export default async function Admin() {
           <div>
             <div className="admin-topline">Admin Dashboard</div>
             <h1>Editorial command center</h1>
-            <p className="admin-muted">Generate drafts, review SEO, approve posts, and publish HustlePathDaily articles.</p>
+            <p className="admin-muted">
+              Generate drafts, review SEO, approve posts, and publish HustlePathDaily articles.
+            </p>
           </div>
+
           <div className="admin-actions compact">
             <form action="/api/admin/logout" method="POST">
               <button className="secondary-link" type="submit">Logout</button>
             </form>
+
             <form action="/api/admin/format-existing" method="POST">
               <button className="secondary-link" type="submit">Format existing posts</button>
             </form>
-            <form action="/api/admin/generate-draft" method="POST">
+
+            <form action={generateDraftAction}>
               <button className="primary-link" type="submit">Generate draft now</button>
             </form>
           </div>
@@ -69,7 +84,12 @@ export default async function Admin() {
         <div className="admin-section">
           <h2>Recent drafts</h2>
           <div className="draft-list">
-            {recent.length === 0 && <div className="empty-state">No drafts yet. Generate one to start the editorial flow.</div>}
+            {recent.length === 0 && (
+              <div className="empty-state">
+                No drafts yet. Generate one to start the editorial flow.
+              </div>
+            )}
+
             {recent.map((post) => (
               <Link key={post.id} href={`/admin/drafts/${post.id}`} className="draft-item">
                 <div>
