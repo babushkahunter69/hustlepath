@@ -1,15 +1,210 @@
-import { sql } from '@/lib/db';
-export const dynamic = 'force-dynamic';
-function escapeXml(value: string) { return String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&apos;'); }
-function wrapText(text: string, maxChars = 18, maxLines = 5) { const words = String(text || '').split(/\s+/).filter(Boolean); const lines: string[] = []; let line = ''; for (const word of words) { const next = line ? `${line} ${word}` : word; if (next.length > maxChars && line) { lines.push(line); line = word; } else { line = next; } if (lines.length === maxLines) break; } if (line && lines.length < maxLines) lines.push(line); return lines; }
-export async function GET(_request: Request, { params }: { params: Promise<{ postId: string; index: string }> }) {
-  const { postId, index } = await params;
-  const [post] = await sql`select title, category, pinterest_meta from posts where id = ${postId} limit 1`;
-  const pins = Array.isArray(post?.pinterest_meta?.pins) ? post.pinterest_meta.pins : [];
-  const pin = pins[Number(index)] || {};
-  const title = String(pin.title || post?.title || 'HustlePathDaily');
-  const category = String(post?.category || pin.angle || 'Online income');
-  const lines = wrapText(title);
-  const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff7ec"/><stop offset="1" stop-color="#f3dfc3"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="26" stdDeviation="28" flood-color="#2a1d10" flood-opacity="0.16"/></filter></defs><rect width="1000" height="1500" fill="url(#bg)"/><circle cx="830" cy="210" r="110" fill="#ff5a1f" opacity="0.12"/><circle cx="130" cy="1240" r="170" fill="#111111" opacity="0.07"/><rect x="90" y="130" width="820" height="1240" rx="54" fill="#fffaf3" filter="url(#shadow)"/><text x="135" y="220" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" letter-spacing="6" fill="#ff4b00">HUSTLEPATHDAILY</text><text x="135" y="300" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="900" letter-spacing="4" fill="#6d6258">${escapeXml(category).toUpperCase()}</text>${lines.map((line, i) => `<text x="135" y="${470 + i * 115}" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="900" fill="#111111">${escapeXml(line)}</text>`).join('')}<rect x="135" y="1060" width="470" height="92" rx="46" fill="#111111"/><text x="178" y="1120" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#ffffff">Read the full guide</text><text x="135" y="1260" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" fill="#4d443d">Beginner-friendly ideas, simple steps, no hype.</text></svg>`;
-  return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' } });
+import { sql } from '../../../../../../lib/db'
+
+export const dynamic = 'force-dynamic'
+
+type PinterestPin = {
+  title?: string
+  description?: string
+  angle?: string
+  status?: 'draft' | 'posted'
+}
+
+function escapeXml(value: unknown) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+function cleanText(value: unknown, fallback = '') {
+  return String(value || fallback).replace(/\s+/g, ' ').trim()
+}
+
+function simplifyTitle(value: string, angle: string) {
+  const raw = cleanText(value)
+  const lower = raw.toLowerCase()
+  const a = angle.toLowerCase()
+
+  if (a.includes('mistake') || lower.includes('mistake')) return 'Avoid These Money Mistakes'
+  if (a.includes('checklist') || lower.includes('checklist')) return 'Your First Income Checklist'
+  if (a.includes('result') || lower.includes('result')) return 'What Happens When You Start'
+  if (a.includes('curiosity')) return 'Nobody Tells Beginners This'
+  if (lower.includes('$100')) return 'Make Your First $100 Online'
+  if (lower.includes('first online income')) return 'Start Your First Income Stream'
+  if (lower.includes('redbubble')) return 'Promote Redbubble Without Ads'
+  if (lower.includes('pinterest')) return 'Pinterest Traffic for Beginners'
+
+  const cleaned = raw
+    .replace(/:.*$/, '')
+    .replace(/\bA Beginner[’']s Step-by-Step Guide\b/gi, '')
+    .replace(/\bStep-by-Step Guide\b/gi, '')
+    .replace(/\bBeginner[’']s Guide\b/gi, '')
+    .replace(/\bOnline Income Journey\b/gi, 'Online Income')
+    .replace(/\bMethods That Actually\b/gi, 'Methods That Work')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 6)
+    .join(' ')
+
+  return cleaned || 'Make Money Online'
+}
+
+function wrapText(text: string, maxChars = 16, maxLines = 4) {
+  const words = cleanText(text).split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+
+    if (next.length > maxChars && current) {
+      lines.push(current)
+      current = word
+    } else {
+      current = next
+    }
+
+    if (lines.length >= maxLines) break
+  }
+
+  if (current && lines.length < maxLines) lines.push(current)
+  return lines
+}
+
+function getStyle(angle: string) {
+  const a = angle.toLowerCase()
+
+  if (a.includes('mistake')) {
+    return { bg: '#fff3ef', accent: '#f04b18', badge: 'AVOID THIS', footer: 'READ BEFORE YOU START' }
+  }
+
+  if (a.includes('checklist')) {
+    return { bg: '#f3f7ef', accent: '#255f3f', badge: 'SAVE THIS', footer: 'GET THE FULL CHECKLIST' }
+  }
+
+  if (a.includes('result')) {
+    return { bg: '#f8f0df', accent: '#d99024', badge: 'REAL TALK', footer: 'SEE WHAT TO EXPECT' }
+  }
+
+  if (a.includes('curiosity')) {
+    return { bg: '#eef3f8', accent: '#1f4f82', badge: 'MOST PEOPLE MISS THIS', footer: 'LEARN THE SIMPLE WAY' }
+  }
+
+  return { bg: '#f5efe5', accent: '#255f3f', badge: 'START HERE', footer: 'READ THE FULL GUIDE' }
+}
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ postId: string; index: string }> }
+) {
+  const { postId, index } = await context.params
+
+  const [post] = await sql`
+    select title, category, pinterest_meta
+    from posts
+    where id = ${postId}
+    limit 1
+  `
+
+  const pins: PinterestPin[] = Array.isArray(post?.pinterest_meta?.pins)
+    ? post.pinterest_meta.pins
+    : []
+
+  const pin = pins[Number(index)] || {}
+
+  const angle = cleanText(pin.angle || post?.category, 'beginner')
+  const style = getStyle(angle)
+
+  const headline = simplifyTitle(
+    cleanText(pin.title || post?.title, 'Make Money Online'),
+    angle
+  )
+
+  const description = cleanText(
+    pin.description,
+    'Simple, realistic steps for beginners who want to start earning online.'
+  )
+
+  const headlineLines = wrapText(headline, 15, 4)
+  const descLines = wrapText(description, 38, 3)
+
+  const headlineFont = headlineLines.length >= 4 ? 76 : 88
+  const headlineStartY = headlineLines.length >= 4 ? 515 : 560
+
+  const headlineSvg = headlineLines
+    .map(
+      (line, i) => `
+        <text x="500" y="${headlineStartY + i * (headlineFont + 10)}"
+          text-anchor="middle"
+          font-size="${headlineFont}"
+          font-weight="900"
+          fill="#111111"
+          font-family="Arial, Helvetica, sans-serif">
+          ${escapeXml(line)}
+        </text>
+      `
+    )
+    .join('')
+
+  const descSvg = descLines
+    .map(
+      (line, i) => `
+        <text x="500" y="${1045 + i * 42}"
+          text-anchor="middle"
+          font-size="31"
+          font-weight="600"
+          fill="#6b6258"
+          font-family="Arial, Helvetica, sans-serif">
+          ${escapeXml(line)}
+        </text>
+      `
+    )
+    .join('')
+
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500">
+  <rect width="1000" height="1500" fill="${style.bg}"/>
+
+  <circle cx="900" cy="220" r="230" fill="${style.accent}" opacity="0.14"/>
+  <circle cx="80" cy="1320" r="260" fill="${style.accent}" opacity="0.10"/>
+
+  <rect x="70" y="85" width="860" height="1330" rx="58" fill="#fffaf2" stroke="#eadfce" stroke-width="3"/>
+
+  <text x="500" y="185" text-anchor="middle" font-size="36" font-weight="900" fill="#111111" font-family="Arial, Helvetica, sans-serif">
+    HustlePathDaily<tspan fill="#f04b18">.</tspan>
+  </text>
+
+  <rect x="230" y="255" width="540" height="78" rx="39" fill="${style.accent}"/>
+  <text x="500" y="306" text-anchor="middle" font-size="31" font-weight="900" fill="#ffffff" letter-spacing="2" font-family="Arial, Helvetica, sans-serif">
+    ${escapeXml(style.badge)}
+  </text>
+
+  <rect x="360" y="390" width="280" height="12" rx="6" fill="${style.accent}"/>
+
+  ${headlineSvg}
+
+  <rect x="350" y="940" width="300" height="14" rx="7" fill="${style.accent}"/>
+
+  <g>
+    ${descSvg}
+  </g>
+
+  <rect x="165" y="1245" width="670" height="84" rx="42" fill="#111111"/>
+  <text x="500" y="1300" text-anchor="middle" font-size="29" font-weight="900" letter-spacing="3" fill="#ffffff" font-family="Arial, Helvetica, sans-serif">
+    ${escapeXml(style.footer)}
+  </text>
+
+  <text x="500" y="1408" text-anchor="middle" font-size="26" font-weight="900" letter-spacing="5" fill="${style.accent}" font-family="Arial, Helvetica, sans-serif">
+    HUSTLEPATHDAILY.COM
+  </text>
+</svg>`.trim()
+
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  })
 }

@@ -7,7 +7,7 @@ export default async function PublishedPage() {
 
   try {
     posts = await sql`
-      select id, title, slug, published_at, created_at
+      select id, title, slug, published_at, created_at, pinterest_meta
       from posts
       where status = 'published'
       order by published_at desc nulls last, created_at desc
@@ -39,6 +39,7 @@ export default async function PublishedPage() {
               <div>
                 <h2>{post.title || 'Untitled post'}</h2>
                 <p>
+                  {Array.isArray(post.pinterest_meta?.pins) ? `${post.pinterest_meta.pins.length} pins · ` : ''}
                   Published{' '}
                   {post.published_at
                     ? new Date(post.published_at).toLocaleString()
@@ -47,6 +48,9 @@ export default async function PublishedPage() {
               </div>
 
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <Link href={`/admin/drafts/${post.id}`} className="secondary-link small">
+                  Edit / pins
+                </Link>
                 <Link href={`/blog/${post.slug}`} className="secondary-link small">
                   View
                 </Link>

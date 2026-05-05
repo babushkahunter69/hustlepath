@@ -111,6 +111,10 @@ export default async function Admin() {
             View published posts
           </Link>
 
+          <Link href="/admin/pins" className="secondary-link">
+            Pinterest pins
+          </Link>
+
           <Link href="/admin/products" className="secondary-link">
             Product library
           </Link>
