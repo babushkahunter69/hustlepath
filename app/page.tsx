@@ -5,9 +5,9 @@ import Newsletter from "@/components/Newsletter";
 import { sql } from "@/lib/db";
 
 export const metadata = {
-  title: "Daily ideas for building your first online income stream",
+  title: "Hustle Path Daily | Beginner Online Income & Pinterest Guides",
   description:
-    "Explore beginner-friendly side hustle ideas, Pinterest growth strategies, online income guides, and practical tutorials for building your first income stream online.",
+    "Beginner-friendly guides for online income, Pinterest growth, side hustles, and practical ways to start making money online.",
 };
 
 type Post = {
