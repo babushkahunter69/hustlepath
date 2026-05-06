@@ -113,6 +113,8 @@ export default async function AdminPinsPage() {
     error = err.message || 'Unable to load Pinterest pins.';
   }
 
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://hustlepathdaily.com').replace(/\/$/, '');
+
   const totals = posts.reduce((acc, post) => {
     const pins = getPins(post);
     acc.total += pins.length;
@@ -189,8 +191,12 @@ export default async function AdminPinsPage() {
                 {pins.length > 0 && (
                   <div className="pin-grid">
                     {pins.map((pin: any, index: number) => {
-                      const imageUrl = pin.image_url || `/api/pinterest/pin-image/${post.id}/${index}`;
-                      const trackedUrl = pin.tracked_url || `/go/pin/${post.id}/${index}`;
+                      const imagePath = pin.image_url || `/api/pinterest/pin-image/${post.id}/${index}`;
+                      const trackedPath = pin.tracked_url || `/go/pin/${post.id}/${index}`;
+                      const imageUrl = imagePath.startsWith('http') ? imagePath : `${siteUrl}${imagePath}`;
+                      const trackedUrl = trackedPath.startsWith('http') ? trackedPath : `${siteUrl}${trackedPath}`;
+                      const pinterestDescription = [pin.title, pin.description].filter(Boolean).join(' - ');
+                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
                       const posted = pin.status === 'posted';
 
                       return (
@@ -200,17 +206,20 @@ export default async function AdminPinsPage() {
                           <p>{pin.description}</p>
 
                           <div className="pin-tools">
-                            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">
+                            <a href={imagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">
                               Open image
                             </a>
-                            <a href={trackedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">
+                            <a href={trackedPath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">
                               Test link
+                            </a>
+                            <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">
+                              Open Pinterest
                             </a>
                           </div>
 
                           <div className="tracked-url-box">
                             <small>Tracked URL</small>
-                            <code>{trackedUrl}</code>
+                            <code>{trackedPath}</code>
                           </div>
 
                           <form action={pinsAction} className="pin-status-form">

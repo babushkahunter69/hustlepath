@@ -9,6 +9,10 @@ type PinterestPin = {
   status?: 'draft' | 'posted'
 }
 
+function cleanText(value: unknown, fallback = '') {
+  return String(value || fallback).replace(/\s+/g, ' ').trim()
+}
+
 function escapeXml(value: unknown) {
   return String(value || '')
     .replaceAll('&', '&amp;')
@@ -18,19 +22,15 @@ function escapeXml(value: unknown) {
     .replaceAll("'", '&apos;')
 }
 
-function cleanText(value: unknown, fallback = '') {
-  return String(value || fallback).replace(/\s+/g, ' ').trim()
-}
-
 function simplifyTitle(value: string, angle: string) {
-  const raw = cleanText(value)
+  const raw = cleanText(value, 'Make Money Online')
   const lower = raw.toLowerCase()
   const a = angle.toLowerCase()
 
   if (a.includes('mistake') || lower.includes('mistake')) return 'Avoid These Money Mistakes'
   if (a.includes('checklist') || lower.includes('checklist')) return 'Your First Income Checklist'
   if (a.includes('result') || lower.includes('result')) return 'What Happens When You Start'
-  if (a.includes('curiosity')) return 'Nobody Tells Beginners This'
+  if (a.includes('curiosity') || lower.includes('nobody')) return 'Nobody Tells Beginners This'
   if (lower.includes('$100')) return 'Make Your First $100 Online'
   if (lower.includes('first online income')) return 'Start Your First Income Stream'
   if (lower.includes('redbubble')) return 'Promote Redbubble Without Ads'
@@ -45,7 +45,7 @@ function simplifyTitle(value: string, angle: string) {
     .replace(/\bMethods That Actually\b/gi, 'Methods That Work')
     .trim()
     .split(/\s+/)
-    .slice(0, 6)
+    .slice(0, 7)
     .join(' ')
 
   return cleaned || 'Make Money Online'
@@ -70,29 +70,51 @@ function wrapText(text: string, maxChars = 16, maxLines = 4) {
   }
 
   if (current && lines.length < maxLines) lines.push(current)
-  return lines
+  return lines.slice(0, maxLines)
 }
 
-function getStyle(angle: string) {
+function templateForAngle(angle: string) {
   const a = angle.toLowerCase()
 
   if (a.includes('mistake')) {
-    return { bg: '#fff3ef', accent: '#f04b18', badge: 'AVOID THIS', footer: 'READ BEFORE YOU START' }
+    return { bg: '#fff3ef', accent: '#f04b18', badge: 'AVOID THIS', cta: 'READ BEFORE YOU START' }
   }
 
   if (a.includes('checklist')) {
-    return { bg: '#f3f7ef', accent: '#255f3f', badge: 'SAVE THIS', footer: 'GET THE FULL CHECKLIST' }
+    return { bg: '#f3f7ef', accent: '#255f3f', badge: 'SAVE THIS', cta: 'GET THE FULL CHECKLIST' }
   }
 
   if (a.includes('result')) {
-    return { bg: '#f8f0df', accent: '#d99024', badge: 'REAL TALK', footer: 'SEE WHAT TO EXPECT' }
+    return { bg: '#f8f0df', accent: '#d99024', badge: 'REAL TALK', cta: 'SEE WHAT TO EXPECT' }
   }
 
   if (a.includes('curiosity')) {
-    return { bg: '#eef3f8', accent: '#1f4f82', badge: 'MOST PEOPLE MISS THIS', footer: 'LEARN THE SIMPLE WAY' }
+    return { bg: '#eef3f8', accent: '#1f4f82', badge: 'MOST PEOPLE MISS THIS', cta: 'LEARN THE SIMPLE WAY' }
   }
 
-  return { bg: '#f5efe5', accent: '#255f3f', badge: 'START HERE', footer: 'READ THE FULL GUIDE' }
+  if (a.includes('how-to')) {
+    return { bg: '#f5efe5', accent: '#255f3f', badge: 'HOW TO', cta: 'READ THE FULL GUIDE' }
+  }
+
+  return { bg: '#f5efe5', accent: '#255f3f', badge: 'START HERE', cta: 'READ THE FULL GUIDE' }
+}
+
+function buildTextSvg(lines: string[], startY: number, fontSize: number, gap: number) {
+  return lines
+    .map(
+      (line, i) => `
+        <text
+          x="500"
+          y="${startY + i * (fontSize + gap)}"
+          text-anchor="middle"
+          font-size="${fontSize}"
+          font-weight="900"
+          fill="#111111"
+          font-family="Arial, Helvetica, sans-serif"
+        >${escapeXml(line)}</text>
+      `
+    )
+    .join('')
 }
 
 export async function GET(
@@ -113,55 +135,14 @@ export async function GET(
     : []
 
   const pin = pins[Number(index)] || {}
-
   const angle = cleanText(pin.angle || post?.category, 'beginner')
-  const style = getStyle(angle)
+  const style = templateForAngle(angle)
+  const headline = simplifyTitle(cleanText(pin.title || post?.title, 'Make Money Online'), angle)
+  const headlineLines = wrapText(headline, 16, 4)
 
-  const headline = simplifyTitle(
-    cleanText(pin.title || post?.title, 'Make Money Online'),
-    angle
-  )
-
-  const description = cleanText(
-    pin.description,
-    'Simple, realistic steps for beginners who want to start earning online.'
-  )
-
-  const headlineLines = wrapText(headline, 15, 4)
-  const descLines = wrapText(description, 38, 3)
-
-  const headlineFont = headlineLines.length >= 4 ? 76 : 88
-  const headlineStartY = headlineLines.length >= 4 ? 515 : 560
-
-  const headlineSvg = headlineLines
-    .map(
-      (line, i) => `
-        <text x="500" y="${headlineStartY + i * (headlineFont + 10)}"
-          text-anchor="middle"
-          font-size="${headlineFont}"
-          font-weight="900"
-          fill="#111111"
-          font-family="Arial, Helvetica, sans-serif">
-          ${escapeXml(line)}
-        </text>
-      `
-    )
-    .join('')
-
-  const descSvg = descLines
-    .map(
-      (line, i) => `
-        <text x="500" y="${1045 + i * 42}"
-          text-anchor="middle"
-          font-size="31"
-          font-weight="600"
-          fill="#6b6258"
-          font-family="Arial, Helvetica, sans-serif">
-          ${escapeXml(line)}
-        </text>
-      `
-    )
-    .join('')
+  const headlineFont = headlineLines.length >= 4 ? 72 : headlineLines.length === 3 ? 80 : 90
+  const headlineStartY = headlineLines.length >= 4 ? 545 : headlineLines.length === 3 ? 585 : 640
+  const headlineSvg = buildTextSvg(headlineLines, headlineStartY, headlineFont, 12)
 
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500">
@@ -170,33 +151,29 @@ export async function GET(
   <circle cx="900" cy="220" r="230" fill="${style.accent}" opacity="0.14"/>
   <circle cx="80" cy="1320" r="260" fill="${style.accent}" opacity="0.10"/>
 
-  <rect x="70" y="85" width="860" height="1330" rx="58" fill="#fffaf2" stroke="#eadfce" stroke-width="3"/>
+  <rect x="80" y="95" width="840" height="1310" rx="56" fill="#fffaf2" stroke="#eadfce" stroke-width="3"/>
 
-  <text x="500" y="185" text-anchor="middle" font-size="36" font-weight="900" fill="#111111" font-family="Arial, Helvetica, sans-serif">
+  <text x="500" y="190" text-anchor="middle" font-size="36" font-weight="900" fill="#111111" font-family="Arial, Helvetica, sans-serif">
     HustlePathDaily<tspan fill="#f04b18">.</tspan>
   </text>
 
-  <rect x="230" y="255" width="540" height="78" rx="39" fill="${style.accent}"/>
-  <text x="500" y="306" text-anchor="middle" font-size="31" font-weight="900" fill="#ffffff" letter-spacing="2" font-family="Arial, Helvetica, sans-serif">
+  <rect x="260" y="270" width="480" height="72" rx="36" fill="${style.accent}"/>
+  <text x="500" y="317" text-anchor="middle" font-size="29" font-weight="900" fill="#ffffff" letter-spacing="2" font-family="Arial, Helvetica, sans-serif">
     ${escapeXml(style.badge)}
   </text>
 
-  <rect x="360" y="390" width="280" height="12" rx="6" fill="${style.accent}"/>
+  <rect x="370" y="390" width="260" height="10" rx="5" fill="${style.accent}"/>
 
   ${headlineSvg}
 
-  <rect x="350" y="940" width="300" height="14" rx="7" fill="${style.accent}"/>
+  <rect x="350" y="985" width="300" height="14" rx="7" fill="${style.accent}"/>
 
-  <g>
-    ${descSvg}
-  </g>
-
-  <rect x="165" y="1245" width="670" height="84" rx="42" fill="#111111"/>
-  <text x="500" y="1300" text-anchor="middle" font-size="29" font-weight="900" letter-spacing="3" fill="#ffffff" font-family="Arial, Helvetica, sans-serif">
-    ${escapeXml(style.footer)}
+  <rect x="175" y="1125" width="650" height="88" rx="44" fill="#111111"/>
+  <text x="500" y="1181" text-anchor="middle" font-size="28" font-weight="900" letter-spacing="3" fill="#ffffff" font-family="Arial, Helvetica, sans-serif">
+    ${escapeXml(style.cta)}
   </text>
 
-  <text x="500" y="1408" text-anchor="middle" font-size="26" font-weight="900" letter-spacing="5" fill="${style.accent}" font-family="Arial, Helvetica, sans-serif">
+  <text x="500" y="1362" text-anchor="middle" font-size="25" font-weight="900" letter-spacing="5" fill="${style.accent}" font-family="Arial, Helvetica, sans-serif">
     HUSTLEPATHDAILY.COM
   </text>
 </svg>`.trim()

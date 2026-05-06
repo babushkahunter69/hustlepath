@@ -36,6 +36,67 @@ function safeJsonParse(raw: string) {
   }
 }
 
+
+function keywordList(input: PinInput) {
+  return [input.primaryKeyword, ...(input.relatedKeywords || []), input.category]
+    .map((item) => cleanText(item).toLowerCase())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index)
+    .slice(0, 5);
+}
+
+function joinKeywords(keywords: string[]) {
+  if (keywords.length === 0) return 'online income ideas';
+  if (keywords.length === 1) return keywords[0];
+  if (keywords.length === 2) return `${keywords[0]} and ${keywords[1]}`;
+  return `${keywords.slice(0, -1).join(', ')}, and ${keywords[keywords.length - 1]}`;
+}
+
+export function optimizePinterestDescription(params: {
+  angle: PinterestPin['angle'] | string;
+  title: string;
+  articleTitle?: string;
+  excerpt?: string;
+  primaryKeyword?: string;
+  relatedKeywords?: string[];
+  category?: string;
+}) {
+  const angle = cleanText(params.angle || 'beginner').toLowerCase();
+  const title = cleanText(params.title || params.articleTitle || 'online income guide');
+  const keywords = [params.primaryKeyword, ...(params.relatedKeywords || []), params.category]
+    .map((item) => cleanText(item).toLowerCase())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index)
+    .slice(0, 5);
+  const keywordPhrase = joinKeywords(keywords);
+
+  let lead = `Start here if you want a simple guide to ${keywordPhrase}.`;
+  let cta = 'Read the full guide for practical next steps.';
+
+  if (angle.includes('mistake')) {
+    lead = `Avoid common mistakes with ${keywordPhrase} before you waste time on the wrong steps.`;
+    cta = 'Read this beginner-friendly breakdown before you start.';
+  } else if (angle.includes('checklist')) {
+    lead = `Save this practical checklist for ${keywordPhrase}.`;
+    cta = 'Use it as a simple starting point when planning your next steps.';
+  } else if (angle.includes('results')) {
+    lead = `Wondering what realistic progress with ${keywordPhrase} actually looks like?`;
+    cta = 'Read the guide for practical expectations and simple action steps.';
+  } else if (angle.includes('how-to')) {
+    lead = `Learn how to approach ${keywordPhrase} with clear, beginner-friendly steps.`;
+    cta = 'Read the full guide and start with the simplest next move.';
+  } else if (angle.includes('curiosity')) {
+    lead = `Most beginners overcomplicate ${keywordPhrase}, but it can be simpler than it looks.`;
+    cta = 'Read the full guide to see what actually matters.';
+  }
+
+  const details = params.excerpt
+    ? cleanText(params.excerpt).slice(0, 120)
+    : `${title} covers realistic tips for beginners without hype, fake promises, or complicated tools.`;
+
+  return `${lead} ${details} ${cta}`.replace(/\s+/g, ' ').slice(0, 480).trim();
+}
+
 function uniquePins<T extends { title: string }>(pins: T[]): T[] {
   const seen = new Set<string>();
   return pins.filter((pin) => {
@@ -50,16 +111,25 @@ function fallbackPins(input: PinInput): PinterestPin[] {
   const keyword = cleanText(input.primaryKeyword || input.title);
   const base = cleanText(input.title).replace(/[?.!]+$/g, '');
   const now = new Date().toISOString();
-  const angles: Array<{ angle: PinterestPin['angle']; title: string; description: string }> = [
-    { angle: 'beginner', title: `${base}: Beginner-Friendly Guide`, description: `A simple beginner guide to ${keyword.toLowerCase()} with practical steps you can start using today.` },
-    { angle: 'checklist', title: `${keyword}: Simple Checklist`, description: `Use this practical checklist to understand ${keyword.toLowerCase()} without hype, confusion, or expensive tools.` },
-    { angle: 'how-to', title: `How to Start ${keyword} the Simple Way`, description: `Learn how to approach ${keyword.toLowerCase()} with clear steps, realistic expectations, and beginner-friendly tools.` },
-    { angle: 'mistake', title: `${keyword} Mistakes Beginners Should Avoid`, description: `Avoid common beginner mistakes and build a cleaner plan for ${keyword.toLowerCase()} from the start.` },
-    { angle: 'curiosity', title: `Most Beginners Overcomplicate ${keyword}`, description: `A clear breakdown of what matters, what does not, and how to make ${keyword.toLowerCase()} feel manageable.` },
-    { angle: 'results', title: `A Realistic Plan for ${keyword}`, description: `A practical plan for beginners who want to make progress with ${keyword.toLowerCase()} without chasing fake promises.` },
+  const angles: Array<{ angle: PinterestPin['angle']; title: string }> = [
+    { angle: 'beginner', title: `${base}: Beginner-Friendly Guide` },
+    { angle: 'checklist', title: `${keyword}: Simple Checklist` },
+    { angle: 'how-to', title: `How to Start ${keyword} the Simple Way` },
+    { angle: 'mistake', title: `${keyword} Mistakes Beginners Should Avoid` },
+    { angle: 'curiosity', title: `Most Beginners Overcomplicate ${keyword}` },
+    { angle: 'results', title: `A Realistic Plan for ${keyword}` },
   ];
   return uniquePins(angles).slice(0, input.count || 6).map((item) => ({
     ...item,
+    description: optimizePinterestDescription({
+      angle: item.angle,
+      title: item.title,
+      articleTitle: input.title,
+      excerpt: input.excerpt,
+      primaryKeyword: input.primaryKeyword,
+      relatedKeywords: input.relatedKeywords,
+      category: input.category,
+    }),
     image_prompt: `Vertical Pinterest pin, 2:3 ratio, warm neutral background, bold readable headline text: "${item.title}", clean blog graphic style, subtle laptop or notebook visual, no fake income screenshots`,
     status: 'draft' as const,
     url: input.slug ? `/blog/${input.slug}` : undefined,
@@ -76,7 +146,7 @@ function normalizePins(rawPins: any[], input: PinInput): PinterestPin[] {
 
     return {
       title: cleanText(pin.title).slice(0, 100),
-      description: cleanText(pin.description).slice(0, 480),
+      description: optimizePinterestDescription({ angle, title: cleanText(pin.title), articleTitle: input.title, excerpt: input.excerpt, primaryKeyword: input.primaryKeyword, relatedKeywords: input.relatedKeywords, category: input.category }),
       image_prompt: cleanText(pin.image_prompt || pin.imagePrompt || pin.image).slice(0, 700),
       angle,
       status: pin.status === 'posted' ? 'posted' : 'draft',
