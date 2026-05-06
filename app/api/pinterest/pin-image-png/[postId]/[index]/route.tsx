@@ -15,19 +15,51 @@ function cleanText(value: unknown, fallback = '') {
   return String(value || fallback).replace(/\s+/g, ' ').trim()
 }
 
-function simplifyTitle(value: string, angle: string) {
-  const raw = cleanText(value, 'Make Money Online')
-  const lower = raw.toLowerCase()
+function simplifyTitle(value: string, angle: string, articleTitle = '', index = 0) {
+  const raw = cleanText(value, articleTitle || 'Make Money Online')
+  const haystack = `${raw} ${articleTitle}`.toLowerCase()
   const a = angle.toLowerCase()
 
-  if (a.includes('mistake') || lower.includes('mistake')) return 'Avoid These Money Mistakes'
-  if (a.includes('checklist') || lower.includes('checklist')) return 'Your First Income Checklist'
-  if (a.includes('result') || lower.includes('result')) return 'What Happens When You Start'
-  if (a.includes('curiosity') || lower.includes('nobody')) return 'Nobody Tells Beginners This'
-  if (lower.includes('$100')) return 'Make Your First $100 Online'
-  if (lower.includes('first online income')) return 'Start Your First Income Stream'
-  if (lower.includes('redbubble')) return 'Promote Redbubble Without Ads'
-  if (lower.includes('pinterest')) return 'Pinterest Traffic for Beginners'
+  if (haystack.includes('redbubble')) {
+    const titles = [
+      'Promote Redbubble Without Ads',
+      'Stop These Redbubble Mistakes',
+      'Redbubble Pinterest Checklist',
+      'Pinterest SEO For Redbubble',
+      'Why Redbubble Pins Get Clicks',
+      'What Actually Gets Traffic',
+      'Get More Redbubble Views',
+      'Redbubble Traffic Starter Plan',
+    ]
+    if (a.includes('mistake')) return titles[1]
+    if (a.includes('checklist')) return titles[2]
+    if (a.includes('how-to')) return index > 5 ? titles[6] : titles[3]
+    if (a.includes('curiosity')) return titles[4]
+    if (a.includes('result')) return titles[5]
+    return titles[index % titles.length]
+  }
+
+  if (haystack.includes('side hustle')) {
+    const titles = [
+      'Easy Side Hustles To Start',
+      'Side Hustle Mistakes To Avoid',
+      'Side Hustle Starter Checklist',
+      'How To Pick A Side Hustle',
+      'Most Beginners Miss This',
+      'Realistic Side Hustle Results',
+      'Start With No Experience',
+      'Build A Simple Income Stream',
+    ]
+    return titles[index % titles.length]
+  }
+
+  if (a.includes('mistake')) return 'Avoid These Money Mistakes'
+  if (a.includes('checklist')) return 'Your First Income Checklist'
+  if (a.includes('result')) return 'What Happens When You Start'
+  if (a.includes('curiosity') || haystack.includes('nobody')) return 'Nobody Tells Beginners This'
+  if (haystack.includes('$100')) return 'Make Your First $100 Online'
+  if (haystack.includes('first online income')) return 'Start Your First Income Stream'
+  if (haystack.includes('pinterest')) return 'Pinterest Traffic For Beginners'
 
   const cleaned = raw
     .replace(/:.*$/, '')
@@ -38,7 +70,7 @@ function simplifyTitle(value: string, angle: string) {
     .replace(/\bMethods That Actually\b/gi, 'Methods That Work')
     .trim()
     .split(/\s+/)
-    .slice(0, 7)
+    .slice(0, 6)
     .join(' ')
 
   return cleaned || 'Make Money Online'
@@ -147,7 +179,9 @@ export async function GET(
 
   const headline = simplifyTitle(
     cleanText(pin.title || post?.title, 'Make Money Online'),
-    angle
+    angle,
+    cleanText(post?.title, ''),
+    Number(index) || 0
   )
 
   const headlineLines = splitHeadline(headline)

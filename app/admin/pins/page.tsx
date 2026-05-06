@@ -191,12 +191,9 @@ export default async function AdminPinsPage() {
                 {pins.length > 0 && (
                   <div className="pin-grid">
                     {pins.map((pin: any, index: number) => {
-                      // Always use the PNG route for Pinterest. Pinterest can preview SVGs sometimes,
-                      // but saving often fails with "image is broken".
                       const imagePath = `/api/pinterest/pin-image-png/${post.id}/${index}`;
                       const trackedPath = pin.tracked_url || `/go/pin/${post.id}/${index}`;
-                      const cacheBust = new Date(post.updated_at || post.created_at || Date.now()).getTime();
-                      const imageUrl = `${siteUrl}${imagePath}?v=${cacheBust}`;
+                      const imageUrl = `${siteUrl}${imagePath}?v=${encodeURIComponent(String(post.updated_at || post.published_at || post.created_at || index))}`;
                       const trackedUrl = trackedPath.startsWith('http') ? trackedPath : `${siteUrl}${trackedPath}`;
                       const pinterestDescription = [pin.title, pin.description].filter(Boolean).join(' - ');
                       const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;

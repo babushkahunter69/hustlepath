@@ -36,6 +36,12 @@ function safeJsonParse(raw: string) {
   }
 }
 
+function titleCase(value: string) {
+  return value
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .trim();
+}
 
 function keywordList(input: PinInput) {
   return [input.primaryKeyword, ...(input.relatedKeywords || []), input.category]
@@ -50,6 +56,94 @@ function joinKeywords(keywords: string[]) {
   if (keywords.length === 1) return keywords[0];
   if (keywords.length === 2) return `${keywords[0]} and ${keywords[1]}`;
   return `${keywords.slice(0, -1).join(', ')}, and ${keywords[keywords.length - 1]}`;
+}
+
+function topicFromInput(input: PinInput) {
+  const haystack = [input.title, input.primaryKeyword, input.category, ...(input.relatedKeywords || [])]
+    .map(cleanText)
+    .join(' ')
+    .toLowerCase();
+
+  if (haystack.includes('redbubble')) return 'Redbubble';
+  if (haystack.includes('pinterest')) return 'Pinterest';
+  if (haystack.includes('freelanc')) return 'Freelancing';
+  if (haystack.includes('side hustle')) return 'Side Hustles';
+  if (haystack.includes('tool')) return 'Online Tools';
+  if (haystack.includes('$100') || haystack.includes('first online income')) return 'First Online Income';
+
+  return titleCase(cleanText(input.primaryKeyword || input.category || input.title || 'Online Income'))
+    .replace(/:.*$/, '')
+    .split(/\s+/)
+    .slice(0, 4)
+    .join(' ');
+}
+
+function titleTemplates(input: PinInput): Array<{ angle: PinterestPin['angle']; title: string }> {
+  const topic = topicFromInput(input);
+  const t = topic.toLowerCase();
+
+  if (t.includes('redbubble')) {
+    return [
+      { angle: 'beginner', title: 'Promote Redbubble Without Ads' },
+      { angle: 'mistake', title: 'Stop These Redbubble Mistakes' },
+      { angle: 'checklist', title: 'Redbubble Pinterest Checklist' },
+      { angle: 'how-to', title: 'Pinterest SEO For Redbubble' },
+      { angle: 'curiosity', title: 'Why Redbubble Pins Get Clicks' },
+      { angle: 'results', title: 'What Actually Gets Traffic' },
+      { angle: 'how-to', title: 'Get More Redbubble Views' },
+      { angle: 'beginner', title: 'Redbubble Traffic Starter Plan' },
+    ];
+  }
+
+  if (t.includes('side hustle')) {
+    return [
+      { angle: 'beginner', title: 'Easy Side Hustles To Start' },
+      { angle: 'mistake', title: 'Side Hustle Mistakes To Avoid' },
+      { angle: 'checklist', title: 'Side Hustle Starter Checklist' },
+      { angle: 'how-to', title: 'How To Pick A Side Hustle' },
+      { angle: 'curiosity', title: 'Most Beginners Miss This' },
+      { angle: 'results', title: 'Realistic Side Hustle Results' },
+      { angle: 'beginner', title: 'Start With No Experience' },
+      { angle: 'how-to', title: 'Build A Simple Income Stream' },
+    ];
+  }
+
+  if (t.includes('pinterest')) {
+    return [
+      { angle: 'beginner', title: 'Pinterest Traffic For Beginners' },
+      { angle: 'mistake', title: 'Pinterest Mistakes To Avoid' },
+      { angle: 'checklist', title: 'Pinterest SEO Checklist' },
+      { angle: 'how-to', title: 'How To Get Pinterest Clicks' },
+      { angle: 'curiosity', title: 'Why Some Pins Get Traffic' },
+      { angle: 'results', title: 'What Pinterest Can Actually Do' },
+      { angle: 'how-to', title: 'Create Pins That Get Clicks' },
+      { angle: 'beginner', title: 'Pinterest Growth Starter Plan' },
+    ];
+  }
+
+  if (t.includes('first online income')) {
+    return [
+      { angle: 'beginner', title: 'Start Your First Income Stream' },
+      { angle: 'mistake', title: 'Avoid These Money Mistakes' },
+      { angle: 'checklist', title: 'Your First Income Checklist' },
+      { angle: 'how-to', title: 'How To Make Your First $100' },
+      { angle: 'curiosity', title: 'Nobody Tells Beginners This' },
+      { angle: 'results', title: 'What Happens When You Start' },
+      { angle: 'beginner', title: 'Beginner Income Ideas That Work' },
+      { angle: 'how-to', title: 'Simple Ways To Start Online' },
+    ];
+  }
+
+  return [
+    { angle: 'beginner', title: `${topic} Starter Plan` },
+    { angle: 'mistake', title: `${topic} Mistakes To Avoid` },
+    { angle: 'checklist', title: `${topic} Checklist` },
+    { angle: 'how-to', title: `How To Start ${topic}` },
+    { angle: 'curiosity', title: `What Beginners Miss About ${topic}` },
+    { angle: 'results', title: `Realistic ${topic} Results` },
+    { angle: 'beginner', title: `${topic} For Beginners` },
+    { angle: 'how-to', title: `Simple ${topic} Steps` },
+  ];
 }
 
 export function optimizePinterestDescription(params: {
@@ -70,29 +164,30 @@ export function optimizePinterestDescription(params: {
     .slice(0, 5);
   const keywordPhrase = joinKeywords(keywords);
 
-  let lead = `Start here if you want a simple guide to ${keywordPhrase}.`;
-  let cta = 'Read the full guide for practical next steps.';
+  const shortTitle = title.replace(/[.!?]+$/g, '');
+  let lead = `${shortTitle}: a simple beginner guide for ${keywordPhrase}.`;
+  let cta = 'Open the full article for practical next steps.';
 
   if (angle.includes('mistake')) {
-    lead = `Avoid common mistakes with ${keywordPhrase} before you waste time on the wrong steps.`;
-    cta = 'Read this beginner-friendly breakdown before you start.';
+    lead = `${shortTitle}: avoid common beginner mistakes with ${keywordPhrase}.`;
+    cta = 'Read this before wasting time on the wrong steps.';
   } else if (angle.includes('checklist')) {
-    lead = `Save this practical checklist for ${keywordPhrase}.`;
-    cta = 'Use it as a simple starting point when planning your next steps.';
+    lead = `${shortTitle}: save this checklist for ${keywordPhrase}.`;
+    cta = 'Use it as a quick starting point when planning your next move.';
   } else if (angle.includes('results')) {
-    lead = `Wondering what realistic progress with ${keywordPhrase} actually looks like?`;
-    cta = 'Read the guide for practical expectations and simple action steps.';
+    lead = `${shortTitle}: see what realistic progress with ${keywordPhrase} can look like.`;
+    cta = 'Read the guide for clear expectations without hype.';
   } else if (angle.includes('how-to')) {
-    lead = `Learn how to approach ${keywordPhrase} with clear, beginner-friendly steps.`;
-    cta = 'Read the full guide and start with the simplest next move.';
+    lead = `${shortTitle}: learn the simple steps behind ${keywordPhrase}.`;
+    cta = 'Open the article for the full beginner-friendly breakdown.';
   } else if (angle.includes('curiosity')) {
-    lead = `Most beginners overcomplicate ${keywordPhrase}, but it can be simpler than it looks.`;
+    lead = `${shortTitle}: most beginners miss this part of ${keywordPhrase}.`;
     cta = 'Read the full guide to see what actually matters.';
   }
 
   const details = params.excerpt
-    ? cleanText(params.excerpt).slice(0, 120)
-    : `${title} covers realistic tips for beginners without hype, fake promises, or complicated tools.`;
+    ? cleanText(params.excerpt).slice(0, 100)
+    : 'Built for beginners who want practical steps, not hype or fake promises.';
 
   return `${lead} ${details} ${cta}`.replace(/\s+/g, ' ').slice(0, 480).trim();
 }
@@ -108,18 +203,8 @@ function uniquePins<T extends { title: string }>(pins: T[]): T[] {
 }
 
 function fallbackPins(input: PinInput): PinterestPin[] {
-  const keyword = cleanText(input.primaryKeyword || input.title);
-  const base = cleanText(input.title).replace(/[?.!]+$/g, '');
   const now = new Date().toISOString();
-  const angles: Array<{ angle: PinterestPin['angle']; title: string }> = [
-    { angle: 'beginner', title: `${base}: Beginner-Friendly Guide` },
-    { angle: 'checklist', title: `${keyword}: Simple Checklist` },
-    { angle: 'how-to', title: `How to Start ${keyword} the Simple Way` },
-    { angle: 'mistake', title: `${keyword} Mistakes Beginners Should Avoid` },
-    { angle: 'curiosity', title: `Most Beginners Overcomplicate ${keyword}` },
-    { angle: 'results', title: `A Realistic Plan for ${keyword}` },
-  ];
-  return uniquePins(angles).slice(0, input.count || 6).map((item) => ({
+  return uniquePins(titleTemplates(input)).slice(0, input.count || 8).map((item) => ({
     ...item,
     description: optimizePinterestDescription({
       angle: item.angle,
@@ -130,7 +215,7 @@ function fallbackPins(input: PinInput): PinterestPin[] {
       relatedKeywords: input.relatedKeywords,
       category: input.category,
     }),
-    image_prompt: `Vertical Pinterest pin, 2:3 ratio, warm neutral background, bold readable headline text: "${item.title}", clean blog graphic style, subtle laptop or notebook visual, no fake income screenshots`,
+    image_prompt: `Vertical Pinterest pin, 2:3 ratio, HustlePathDaily brand style, bold readable headline text: "${item.title}", clean neutral background, simple visual accents, no fake income screenshots`,
     status: 'draft' as const,
     url: input.slug ? `/blog/${input.slug}` : undefined,
     created_at: now,
@@ -140,14 +225,26 @@ function fallbackPins(input: PinInput): PinterestPin[] {
 function normalizePins(rawPins: any[], input: PinInput): PinterestPin[] {
   const now = new Date().toISOString();
   const allowedAngles: PinterestPin['angle'][] = ['beginner', 'mistake', 'checklist', 'results', 'how-to', 'curiosity'];
+  const fallback = fallbackPins(input);
 
-  const pins = rawPins.map((pin): PinterestPin => {
-    const angle = allowedAngles.includes(pin.angle) ? pin.angle as PinterestPin['angle'] : 'how-to';
+  const pins = rawPins.map((pin, index): PinterestPin => {
+    const angle = allowedAngles.includes(pin.angle) ? pin.angle as PinterestPin['angle'] : fallback[index % fallback.length].angle;
+    const title = cleanText(pin.title) || fallback[index % fallback.length].title;
+    const tooGeneric = title.toLowerCase().includes('beginner') && title.toLowerCase().includes('guide') && index > 0;
+    const finalTitle = tooGeneric ? fallback[index % fallback.length].title : title;
 
     return {
-      title: cleanText(pin.title).slice(0, 100),
-      description: optimizePinterestDescription({ angle, title: cleanText(pin.title), articleTitle: input.title, excerpt: input.excerpt, primaryKeyword: input.primaryKeyword, relatedKeywords: input.relatedKeywords, category: input.category }),
-      image_prompt: cleanText(pin.image_prompt || pin.imagePrompt || pin.image).slice(0, 700),
+      title: finalTitle.slice(0, 100),
+      description: optimizePinterestDescription({
+        angle,
+        title: finalTitle,
+        articleTitle: input.title,
+        excerpt: input.excerpt,
+        primaryKeyword: input.primaryKeyword,
+        relatedKeywords: input.relatedKeywords,
+        category: input.category,
+      }),
+      image_prompt: cleanText(pin.image_prompt || pin.imagePrompt || pin.image || fallback[index % fallback.length].image_prompt).slice(0, 700),
       angle,
       status: pin.status === 'posted' ? 'posted' : 'draft',
       url: pin.url ? cleanText(pin.url) : input.slug ? `/blog/${input.slug}` : undefined,
@@ -159,25 +256,28 @@ function normalizePins(rawPins: any[], input: PinInput): PinterestPin[] {
     };
   }).filter((pin) => pin.title && pin.description && pin.image_prompt);
 
-  return uniquePins(pins);
+  const combined = uniquePins([...pins, ...fallback]);
+  return combined.slice(0, Math.max(input.count || 8, 8));
 }
 
 export async function generatePinterestPins(input: PinInput): Promise<PinterestPin[]> {
   const count = Math.max(3, Math.min(input.count || 8, 12));
   if (!process.env.OPENAI_API_KEY) return fallbackPins({ ...input, count });
+
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-      temperature: 0.7,
+      temperature: 0.85,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You create Pinterest pin metadata for a beginner online-income blog. Return JSON only.' },
-        { role: 'user', content: `Create ${count} Pinterest pins for this article.\n\nArticle title: ${input.title}\nSlug: ${input.slug || ''}\nCategory: ${input.category || ''}\nPrimary keyword: ${input.primaryKeyword || ''}\nRelated keywords: ${(input.relatedKeywords || []).join(', ')}\nExcerpt: ${input.excerpt || ''}\n\nRules:\n- Pinterest titles must be clickable, specific, and not scammy.\n- No fake income claims.\n- Use different angles: beginner, mistake, checklist, results, how-to, curiosity.\n- Descriptions should use natural Pinterest SEO keywords.\n- Image prompts must be 2:3 vertical pin concepts with clear headline text.\n- Return JSON with one key: pins.\n- Each pin needs: title, description, image_prompt, angle.` },
+        { role: 'system', content: 'You create varied Pinterest pin metadata for a beginner online-income blog. Return JSON only.' },
+        { role: 'user', content: `Create ${count} Pinterest pins for this article.\n\nArticle title: ${input.title}\nSlug: ${input.slug || ''}\nCategory: ${input.category || ''}\nPrimary keyword: ${input.primaryKeyword || ''}\nRelated keywords: ${(input.relatedKeywords || []).join(', ')}\nExcerpt: ${input.excerpt || ''}\n\nRules:\n- Make every pin title visibly different. Do not reuse the same phrase pattern.\n- Use short overlay-friendly titles, usually 3 to 6 words.\n- No fake income claims and no guaranteed results.\n- Use different angles: beginner, mistake, checklist, results, how-to, curiosity.\n- Descriptions should use natural Pinterest SEO keywords.\n- Image prompts must be 2:3 vertical pin concepts with clear headline text.\n- Return JSON with one key: pins.\n- Each pin needs: title, description, image_prompt, angle.` },
       ],
     });
+
     const data = safeJsonParse(completion.choices[0].message.content || '{}');
-    const pins = normalizePins(Array.isArray(data.pins) ? data.pins : [], input).slice(0, count);
+    const pins = normalizePins(Array.isArray(data.pins) ? data.pins : [], { ...input, count }).slice(0, count);
     return pins.length >= 3 ? pins : fallbackPins({ ...input, count });
   } catch {
     return fallbackPins({ ...input, count });
@@ -194,5 +294,5 @@ export function attachPinUrls(postId: string, pins: PinterestPin[]) {
 
 export function normalizePinterestMeta(meta: any, pins: PinterestPin[]) {
   const existing = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
-  return { ...existing, pins, generated_at: new Date().toISOString(), system: 'hustlepath-pinterest-v1' };
+  return { ...existing, pins, generated_at: new Date().toISOString(), system: 'hustlepath-pinterest-v2' };
 }
