@@ -45,7 +45,7 @@ export default function RootLayout({
                 textDecoration: "none",
               }}
             >
-              HustlePathDaily<span style={{ color: "#f04b18" }}>.</span>
+              Hustle Path Daily<span style={{ color: "#f04b18" }}>.</span>
             </Link>
 
             <nav
