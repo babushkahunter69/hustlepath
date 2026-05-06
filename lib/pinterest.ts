@@ -187,7 +187,7 @@ export async function generatePinterestPins(input: PinInput): Promise<PinterestP
 export function attachPinUrls(postId: string, pins: PinterestPin[]) {
   return pins.map((pin, index) => ({
     ...pin,
-    image_url: `/api/pinterest/pin-image/${postId}/${index}`,
+    image_url: `/api/pinterest/pin-image-png/${postId}/${index}`,
     tracked_url: `/go/pin/${postId}/${index}`,
   }));
 }
