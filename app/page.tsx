@@ -4,7 +4,11 @@ import TopicGrid from "@/components/TopicGrid";
 import Newsletter from "@/components/Newsletter";
 import { sql } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
+export const metadata = {
+  title: "Daily ideas for building your first online income stream",
+  description:
+    "Explore beginner-friendly side hustle ideas, Pinterest growth strategies, online income guides, and practical tutorials for building your first income stream online.",
+};
 
 type Post = {
   id: string;
