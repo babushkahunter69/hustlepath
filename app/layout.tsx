@@ -49,7 +49,7 @@ export default function RootLayout({
         whiteSpace: "nowrap",
       }}
     >
-      HustlePathDaily<span style={{ color: "#f04b18" }}>.</span>
+      Hustle Path Daily<span style={{ color: "#f04b18" }}>.</span>
     </a>
 
     <nav
