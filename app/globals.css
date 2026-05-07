@@ -1654,3 +1654,149 @@ p {
     grid-template-columns: 1fr;
   }
 }
+
+.empty-card {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: white;
+  padding: 32px;
+}
+
+.empty-card p {
+  margin: 0;
+  font-weight: 850;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .site-nav {
+    padding: 18px 20px;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .nav-links {
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .nav-links a {
+    font-size: 13px;
+  }
+
+  .home-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding: 52px 20px;
+  }
+
+  .home-hero-title {
+    font-size: clamp(44px, 13vw, 64px);
+    line-height: 0.95;
+    letter-spacing: -0.075em;
+  }
+
+  .home-hero-copy {
+    font-size: 17px;
+    line-height: 1.65;
+  }
+
+  .featured-guide-card {
+    width: 100%;
+    max-width: 520px;
+  }
+
+  .topic-pills {
+    grid-template-columns: 1fr;
+  }
+
+  .section-container {
+    padding: 56px 20px;
+  }
+
+  .section-heading-row {
+    display: block;
+  }
+
+  .section-heading-row .btn {
+    margin-top: 22px;
+  }
+
+  .section-heading h2,
+  .section-heading-row h2,
+  .newsletter-band h2 {
+    font-size: 38px;
+  }
+
+  .post-grid,
+  .topic-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .post-card-number {
+    height: auto;
+    min-height: 90px;
+    padding: 24px;
+    font-size: 48px;
+  }
+
+  .post-card-body,
+  .topic-card {
+    padding: 22px;
+  }
+
+  .post-card h3 {
+    font-size: 22px;
+  }
+
+  .post-card p:not(.post-card-category) {
+    font-size: 16px;
+  }
+
+  .newsletter-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 56px 20px;
+  }
+
+  .newsletter-form {
+    flex-direction: column;
+  }
+
+  .newsletter-form button {
+    min-height: 52px;
+  }
+}
+
+@media (max-width: 520px) {
+  .site-nav {
+    display: block;
+  }
+
+  .logo {
+    display: inline-block;
+    margin-bottom: 10px;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 10px 14px;
+  }
+
+  .home-actions {
+    flex-direction: column;
+  }
+
+  .home-actions .btn {
+    width: 100%;
+  }
+
+  .featured-guide-inner {
+    padding: 24px;
+  }
+
+  .featured-guide-inner h2 {
+    font-size: 24px;
+  }
+}
