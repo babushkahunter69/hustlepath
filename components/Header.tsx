@@ -9,7 +9,7 @@ export default function Header() {
       href="/"
       className="text-2xl font-black leading-none tracking-tight"
     >
-      HustlePathDaily<span className="text-orange-500">.</span>
+      Hustle Path Daily<span className="text-orange-500">.</span>
     </a>
 
     <nav className="hidden gap-8 text-sm font-semibold md:flex">
