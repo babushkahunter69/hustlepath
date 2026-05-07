@@ -21,61 +21,54 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <header
-          style={{
-            borderBottom: "1px solid #ded6ca",
-            background: "#f5efe5",
-          }}
-        >
-          <div
-            style={{
-              maxWidth: "1200px",
-              margin: "0 auto",
-              padding: "28px 24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Link
-              href="/"
-              style={{
-                color: "#111",
-                fontWeight: 900,
-                fontSize: "24px",
-                textDecoration: "none",
-              }}
-            >
-              Hustle Path Daily<span style={{ color: "#f04b18" }}>.</span>
-            </Link>
+  style={{
+    borderBottom: "1px solid #ded6ca",
+    background: "#f5efe5",
+  }}
+>
+  <div
+    style={{
+      maxWidth: "1200px",
+      margin: "0 auto",
+      padding: "20px 22px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "20px",
+    }}
+  >
+    <a
+      href="/"
+      style={{
+        color: "#111",
+        fontWeight: 900,
+        fontSize: "22px",
+        lineHeight: 1,
+        letterSpacing: "-0.04em",
+        textDecoration: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      HustlePathDaily<span style={{ color: "#f04b18" }}>.</span>
+    </a>
 
-            <nav
-              style={{
-                display: "flex",
-                gap: "32px",
-                alignItems: "center",
-              }}
-            >
-              {[
-                ["Home", "/"],
-                ["Blog", "/blog"],
-                ["Topics", "/category"],
-                ["Newsletter", "/newsletter"],
-              ].map(([label, href]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  style={{
-                    color: "#111",
-                    fontWeight: 800,
-                    textDecoration: "none",
-                  }}
-                >
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-        </header>
+    <nav
+      style={{
+        display: "flex",
+        gap: "18px",
+        alignItems: "center",
+        fontSize: "14px",
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <a href="/" style={{ color: "#111", textDecoration: "none" }}>Home</a>
+      <a href="/blog" style={{ color: "#111", textDecoration: "none" }}>Blog</a>
+      <a href="/category" style={{ color: "#111", textDecoration: "none" }}>Topics</a>
+      <a href="/newsletter" style={{ color: "#111", textDecoration: "none" }}>Newsletter</a>
+    </nav>
+  </div>
+</header>
 
         {children}
       </body>
