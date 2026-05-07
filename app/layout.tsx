@@ -64,7 +64,7 @@ export default function RootLayout({
     >
       <a href="/" style={{ color: "#111", textDecoration: "none" }}>Home</a>
       <a href="/blog" style={{ color: "#111", textDecoration: "none" }}>Blog</a>
-      <a href="/category" style={{ color: "#111", textDecoration: "none" }}>Topics</a>
+      <a href="/topics" style={{ color: "#111", textDecoration: "none" }}>Topics</a>
       <a href="/newsletter" style={{ color: "#111", textDecoration: "none" }}>Newsletter</a>
     </nav>
   </div>
