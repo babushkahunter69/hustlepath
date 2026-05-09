@@ -1,0 +1,537 @@
+--- a/db/schema.sql
++++ b/db/schema.sql
+@@ -16,6 +16,10 @@
+   risk_level text,
+   review_notes text,
+   workflow_meta jsonb default '{}'::jsonb,
++  pinterest_meta jsonb default '{}'::jsonb,
++  cluster_id text,
++  cluster_role text,
++  scheduled_for timestamptz,
+   approved_at timestamptz,
+   published_at timestamptz,
+   created_at timestamptz default now(),
+@@ -25,3 +29,12 @@
+ create index if not exists posts_status_idx on posts(status);
+ create index if not exists posts_slug_idx on posts(slug);
+ create index if not exists posts_published_at_idx on posts(published_at);
++
++
++alter table posts add column if not exists pinterest_meta jsonb default '{}'::jsonb;
++alter table posts add column if not exists cluster_id text;
++alter table posts add column if not exists cluster_role text;
++alter table posts add column if not exists scheduled_for timestamptz;
++
++create index if not exists posts_cluster_id_idx on posts(cluster_id);
++create index if not exists posts_scheduled_for_idx on posts(scheduled_for);
+--- a/lib/aiDraft.ts
++++ b/lib/aiDraft.ts
+@@ -3,10 +3,21 @@
+ import { sql } from '@/lib/db';
+ import { scorePost } from '@/lib/seo';
+ import { formatArticleMarkdown } from '@/lib/articleFormat';
++import { getInternalLinkCandidates, internalLinksForPrompt } from '@/lib/internalLinks';
++import { getTodaysClusterSeed } from '@/lib/contentClusters';
+ 
+ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+ 
+-const topics = [
++type GenerateDraftInput = {
++  topic?: string;
++  category?: string;
++  niche?: string;
++  clusterId?: string;
++  clusterRole?: 'pillar' | 'supporting';
++  source?: string;
++};
++
++const fallbackTopics = [
+   'how to make your first online income with one beginner-friendly service',
+   'Pinterest blog traffic plan for a new beginner income blog',
+   'best free tools for starting a small online income project',
+@@ -40,20 +51,27 @@
+   }
+ }
+ 
+-export async function generateDailyDraft() {
+-  const topic = topics[new Date().getUTCDate() % topics.length];
++function parseJson(content: string | null | undefined) {
++  try {
++    return JSON.parse(content || '{}');
++  } catch {
++    return {};
++  }
++}
+ 
+-  const existing = await sql`
+-    select title, slug, category, excerpt
+-    from posts
+-    where slug is not null
+-    order by created_at desc
+-    limit 12
+-  `;
++export async function generateDailyDraft(input: GenerateDraftInput = {}) {
++  const seed = getTodaysClusterSeed();
++  const topic = input.topic || fallbackTopics[new Date().getUTCDate() % fallbackTopics.length];
++  const category = input.category || seed.category || 'Beginner Guide';
++  const niche = input.niche || seed.niche || 'beginner online income';
++
++  const linkCandidates = await getInternalLinkCandidates({
++    topic: `${topic} ${niche}`,
++    category,
++    limit: 5,
++  });
+ 
+-  const internalLinks = existing
+-    .map((post: any) => `- ${post.title}: /blog/${post.slug}`)
+-    .join('\n');
++  const internalLinks = internalLinksForPrompt(linkCandidates);
+ 
+   const completion = await openai.chat.completions.create({
+     model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+@@ -61,52 +79,72 @@
+       {
+         role: 'system',
+         content: `
+-You write high-quality, publish-ready HustlePathDaily articles.
+-
+-Strict requirements:
+-- Must score 85+ for SEO
+-- Clear H2/H3 structure
+-- Bullet lists for steps, tools, examples
+-- Include:
+-  > **Pro tip:** ...
+-  > **Quick win:** ...
+-- Include 2–4 internal links naturally
+-- Clean markdown formatting
+-- No fluff, no hype, no unrealistic income promises
+-- Practical, beginner-friendly, and specific
++You are the senior editor for HustlePathDaily.
+ 
+-Goal:
+-Produce a publish-ready article that requires little or no polishing.
++Your job is to create practical, beginner-friendly articles that can pass an SEO quality gate without manual polishing.
+ 
+-Return JSON only.
++Hard rules:
++- Return valid JSON only.
++- Do not include markdown fences around JSON.
++- Do not make income guarantees.
++- Do not use hype phrases like "get rich", "passive income overnight", or "easy money".
++- Write for beginners who want realistic online income steps.
++- The article must feel written by a helpful editor, not a generic AI tool.
++
++SEO quality gate you must satisfy:
++- title: 35 to 70 characters
++- seo_title: 35 to 70 characters
++- seo_description: 120 to 160 characters
++- excerpt: 140 to 220 characters
++- body: 1300 to 1800 words
++- primary keyword appears in the title, intro, one H2, and conclusion
++- include 5 to 8 H2 sections
++- include at least 2 H3 sections
++- include at least 4 bullet lists
++- include 1 numbered step list
++- include one FAQ section with 3 questions
++- include one blockquote formatted as: > **Pro tip:** ...
++- include one blockquote formatted as: > **Quick win:** ...
++- include 2 to 4 internal links from the provided list only
++- include Pinterest metadata for distribution
++
++Formatting rules:
++- Use clean markdown.
++- Start body with a short intro paragraph, not an H1.
++- Use ## for main sections and ### for subsections.
++- Keep paragraphs short, usually 2 to 4 sentences.
++- Use natural anchor text for internal links.
+ `,
+       },
+       {
+         role: 'user',
+-        content: `Write a complete blog draft about: ${topic}.
++        content: `Create a complete HustlePathDaily article.
+ 
+-Requirements:
+-- 1000 to 1400 words
+-- Use short sections with clear H2 and H3 headings
+-- Use polished bullet lists for steps, examples, qualities, checks, and tool lists
+-- Include one blockquote callout formatted exactly like: > **Pro tip:** practical tip here
+-- Include one blockquote callout formatted exactly like: > **Quick win:** action step here
+-- Use bold text sparingly for important phrases
+-- Practical examples
+-- No hype, no guaranteed income claims
+-- Include 3 to 5 natural internal links if relevant from this list:
+-${internalLinks || 'No existing links yet.'}
++Topic: ${topic}
++Niche: ${niche}
++Category: ${category}
++Cluster role: ${input.clusterRole || 'standalone'}
++
++Available internal links:
++${internalLinks}
+ 
+ Return JSON with exactly these keys:
+-title, slug, excerpt, body, category, seo_title, seo_description, primary_keyword, related_keywords, internal_links.
++title, slug, excerpt, body, category, seo_title, seo_description, primary_keyword, related_keywords, internal_links, pinterest_titles, pinterest_descriptions, pinterest_image_prompts.
+ 
+-body should be clean markdown with bullet lists, blockquote callouts, and scannable sections. internal_links should be an array of objects with title and url.`,
++Key requirements:
++- related_keywords must be an array of 6 to 10 keyword variations.
++- internal_links must be an array of objects with title, url, and anchor_text.
++- pinterest_titles must be an array of 3 click-friendly Pinterest titles.
++- pinterest_descriptions must be an array of 3 Pinterest descriptions, each 250 to 450 characters.
++- pinterest_image_prompts must be an array of 3 simple vertical image concepts for Canva or AI image tools.
++- If no internal links are available, return an empty internal_links array and do not invent URLs.
++`,
+       },
+     ],
+     response_format: { type: 'json_object' },
+   });
+ 
+-  const data = JSON.parse(completion.choices[0].message.content || '{}');
++  const data = parseJson(completion.choices[0].message.content);
+ 
+   const title = String(data.title || 'Untitled HustlePath Draft');
+ 
+@@ -142,31 +180,41 @@
+     insert into posts (
+       title, slug, excerpt, body, category, status,
+       seo_title, seo_description, primary_keyword, related_keywords,
+-      quality_score, risk_level, workflow_meta, published_at
++      quality_score, risk_level, workflow_meta, pinterest_meta,
++      cluster_id, cluster_role, published_at
+     ) values (
+       ${title},
+       ${slug},
+       ${excerpt},
+       ${body},
+-      ${String(data.category || 'Beginner Guide')},
++      ${String(data.category || category)},
+       ${autoPublish ? 'published' : 'draft'},
+       ${seoTitle},
+       ${seoDescription},
+       ${primaryKeyword},
+       ${JSON.stringify(data.related_keywords || [])}::jsonb,
+       ${seo.score},
+-      ${seo.score >= 85 ? 'low' : seo.score >= 65 ? 'medium' : 'needs_work'},
++      ${seo.score >= 85 ? 'low' : seo.score >= 70 ? 'medium' : 'needs_work'},
+       ${JSON.stringify({
+-        source: 'daily-ai-cron',
++        source: input.source || 'daily-ai-cron',
++        niche,
+         seo_checks: seo.checks,
+         internal_links: data.internal_links || [],
++        internal_link_candidates: linkCandidates,
+         auto_published: autoPublish,
+         base_slug: baseSlug,
+         final_slug: slug,
+       })}::jsonb,
++      ${JSON.stringify({
++        titles: data.pinterest_titles || [],
++        descriptions: data.pinterest_descriptions || [],
++        image_prompts: data.pinterest_image_prompts || [],
++      })}::jsonb,
++      ${input.clusterId || null},
++      ${input.clusterRole || null},
+       ${autoPublish ? new Date().toISOString() : null}
+     ) returning id, status, quality_score
+   `;
+ 
+   return post;
+-}
+\ No newline at end of file
++}
+--- a/lib/seo.ts
++++ b/lib/seo.ts
+@@ -1,12 +1,20 @@
+ export type SeoScore = {
+   score: number;
+-  checks: { label: string; passed: boolean; detail: string }[];
++  checks: { label: string; passed: boolean; detail: string; points: number }[];
+ };
+ 
+ function wordCount(text: string) {
+   return text.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+ }
+ 
++function countMatches(text: string, pattern: RegExp) {
++  return (text.match(pattern) || []).length;
++}
++
++function includesKeyword(text: string, keyword: string) {
++  return Boolean(keyword && text.toLowerCase().includes(keyword.toLowerCase()));
++}
++
+ export function scorePost(input: {
+   title?: string | null;
+   excerpt?: string | null;
+@@ -22,41 +30,80 @@
+   const seoDescription = input.seoDescription || excerpt;
+   const primaryKeyword = (input.primaryKeyword || '').toLowerCase().trim();
+   const bodyWords = wordCount(body);
+-  const fullText = `${title} ${excerpt} ${body}`.toLowerCase();
++  const h2Count = countMatches(body, /^##\s+/gm);
++  const h3Count = countMatches(body, /^###\s+/gm);
++  const bulletCount = countMatches(body, /^[-*]\s+/gm);
++  const hasNumberedList = /^\d+\.\s+/gm.test(body);
++  const internalLinkCount = countMatches(body, /\[[^\]]+\]\(\/blog\//g);
++  const hasFaq = /##\s+faq|frequently asked questions/i.test(body);
+ 
+   const checks = [
+     {
+       label: 'Title length',
+       passed: title.length >= 35 && title.length <= 70,
+       detail: `${title.length} characters. Aim for 35 to 70.`,
++      points: 10,
+     },
+     {
+       label: 'SEO title',
+       passed: seoTitle.length >= 35 && seoTitle.length <= 70,
+       detail: `${seoTitle.length} characters. Keep it clear and clickable.`,
++      points: 10,
+     },
+     {
+       label: 'Meta description',
+       passed: seoDescription.length >= 120 && seoDescription.length <= 160,
+       detail: `${seoDescription.length} characters. Aim for 120 to 160.`,
++      points: 10,
++    },
++    {
++      label: 'Excerpt',
++      passed: excerpt.length >= 120 && excerpt.length <= 240,
++      detail: `${excerpt.length} characters. Aim for 120 to 240.`,
++      points: 5,
+     },
+     {
+       label: 'Article depth',
+-      passed: bodyWords >= 900,
+-      detail: `${bodyWords} words. Aim for 900+ for a legit guide.`,
++      passed: bodyWords >= 1200,
++      detail: `${bodyWords} words. Aim for 1200+ for a legit guide.`,
++      points: 15,
+     },
+     {
+       label: 'Keyword usage',
+-      passed: Boolean(primaryKeyword && fullText.includes(primaryKeyword)),
++      passed:
++        Boolean(primaryKeyword) &&
++        includesKeyword(title, primaryKeyword) &&
++        includesKeyword(body.slice(0, 700), primaryKeyword) &&
++        includesKeyword(body, primaryKeyword),
+       detail: primaryKeyword ? `Primary keyword: ${primaryKeyword}` : 'Add a primary keyword.',
++      points: 15,
++    },
++    {
++      label: 'Heading structure',
++      passed: h2Count >= 5 && h2Count <= 9 && h3Count >= 2,
++      detail: `${h2Count} H2 sections and ${h3Count} H3 sections.`,
++      points: 10,
++    },
++    {
++      label: 'Helpful formatting',
++      passed: bulletCount >= 8 && hasNumberedList,
++      detail: `${bulletCount} bullets. Numbered list: ${hasNumberedList ? 'yes' : 'no'}.`,
++      points: 10,
++    },
++    {
++      label: 'Internal links',
++      passed: internalLinkCount >= 2,
++      detail: `${internalLinkCount} internal links. Aim for 2 to 4.`,
++      points: 10,
+     },
+     {
+-      label: 'Helpful structure',
+-      passed: /## |<h2/i.test(body) && (/\n- |<ul/i.test(body) || /step/i.test(body.toLowerCase())),
+-      detail: 'Use sections, steps, bullets, or examples.',
++      label: 'Trust and skimmability',
++      passed: /Pro tip/i.test(body) && /Quick win/i.test(body) && hasFaq,
++      detail: `Pro tip, Quick win, and FAQ present: ${/Pro tip/i.test(body) && /Quick win/i.test(body) && hasFaq ? 'yes' : 'no'}.`,
++      points: 5,
+     },
+   ];
+ 
+-  const score = Math.round((checks.filter((check) => check.passed).length / checks.length) * 100);
++  const score = checks.reduce((total, check) => total + (check.passed ? check.points : 0), 0);
+   return { score, checks };
+ }
+--- a/lib/internalLinks.ts
++++ b/lib/internalLinks.ts
+@@ -0,0 +1,68 @@
++import { sql } from '@/lib/db';
++
++export type InternalLinkCandidate = {
++  title: string;
++  slug: string;
++  category: string | null;
++  excerpt: string | null;
++  primary_keyword: string | null;
++};
++
++function words(value: string) {
++  return value
++    .toLowerCase()
++    .replace(/[^a-z0-9\s]/g, ' ')
++    .split(/\s+/)
++    .filter((word) => word.length > 3);
++}
++
++function overlapScore(seed: string, post: InternalLinkCandidate) {
++  const seedWords = new Set(words(seed));
++  const haystack = words(
++    `${post.title || ''} ${post.category || ''} ${post.excerpt || ''} ${post.primary_keyword || ''}`
++  );
++
++  return haystack.reduce((score, word) => score + (seedWords.has(word) ? 1 : 0), 0);
++}
++
++export async function getInternalLinkCandidates(input: {
++  topic: string;
++  category?: string;
++  limit?: number;
++  excludeSlug?: string;
++}) {
++  const rows = await sql`
++    select title, slug, category, excerpt, primary_keyword
++    from posts
++    where status = 'published'
++      and slug is not null
++      and (${input.excludeSlug || null}::text is null or slug != ${input.excludeSlug || null})
++    order by published_at desc nulls last, created_at desc
++    limit 40
++  `;
++
++  const ranked = (rows as InternalLinkCandidate[])
++    .map((post) => ({
++      ...post,
++      score:
++        overlapScore(`${input.topic} ${input.category || ''}`, post) +
++        (input.category && post.category === input.category ? 4 : 0),
++    }))
++    .sort((a, b) => b.score - a.score)
++    .slice(0, input.limit || 5);
++
++  return ranked.map((post) => ({
++    title: post.title,
++    url: `/blog/${post.slug}`,
++    category: post.category || 'Beginner Guide',
++    primaryKeyword: post.primary_keyword || '',
++  }));
++}
++
++export function internalLinksForPrompt(links: Awaited<ReturnType<typeof getInternalLinkCandidates>>) {
++  if (!links.length) return 'No internal links available yet. Do not invent URLs.';
++
++  return links
++    .map((link) => `- ${link.title} (${link.category}): ${link.url}`)
++    .join('\n');
++}
+--- a/lib/contentClusters.ts
++++ b/lib/contentClusters.ts
+@@ -0,0 +1,58 @@
++export type ClusterSeed = {
++  niche: string;
++  category: string;
++  pillarTitle: string;
++  supportingTitles: string[];
++};
++
++export const contentClusters: ClusterSeed[] = [
++  {
++    niche: 'Pinterest traffic for beginner side hustle blogs',
++    category: 'Pinterest',
++    pillarTitle: 'How to Use Pinterest to Get Blog Traffic as a Beginner',
++    supportingTitles: [
++      'Pinterest SEO Tips for Beginner Bloggers',
++      'Best Pinterest Niches for New Blog Traffic',
++      'How to Create Pinterest Pin Titles That Get Clicks',
++      'Pinterest Board Strategy for a New Blog',
++      'How Many Pins Should a Beginner Create Per Blog Post',
++    ],
++  },
++  {
++    niche: 'beginner online income without an audience',
++    category: 'Beginner Guide',
++    pillarTitle: 'How to Make Your First Online Income Without an Audience',
++    supportingTitles: [
++      'Beginner Services You Can Sell Online With No Audience',
++      'How to Package One Skill Into a Simple Freelance Offer',
++      'Best Free Tools for Starting an Online Income Project',
++      'How to Get Your First Client Without Paid Ads',
++      'Simple Weekly Plan for Building an Online Income Stream',
++    ],
++  },
++  {
++    niche: 'AI tools for simple side hustles',
++    category: 'Tools',
++    pillarTitle: 'Best AI Tools for Starting a Simple Online Side Hustle',
++    supportingTitles: [
++      'How to Use AI to Plan a Beginner Side Hustle',
++      'AI Writing Tools for Blog Posts, Pins, and Product Ideas',
++      'Free AI Tools Beginners Can Use to Save Time',
++      'How to Turn AI Research Into Helpful Blog Content',
++      'AI Side Hustle Mistakes Beginners Should Avoid',
++    ],
++  },
++];
++
++export function getTodaysClusterSeed(date = new Date()) {
++  return contentClusters[date.getUTCDate() % contentClusters.length];
++}
++
++export function getClusterTopics(seed: ClusterSeed) {
++  return [seed.pillarTitle, ...seed.supportingTitles].map((title, index) => ({
++    title,
++    category: seed.category,
++    niche: seed.niche,
++    clusterRole: index === 0 ? 'pillar' : 'supporting',
++  }));
++}
+--- a/app/api/admin/generate-cluster/route.ts
++++ b/app/api/admin/generate-cluster/route.ts
+@@ -0,0 +1,46 @@
++import { NextResponse } from 'next/server';
++import { generateDailyDraft } from '@/lib/aiDraft';
++import { getClusterTopics, getTodaysClusterSeed } from '@/lib/contentClusters';
++
++export async function POST(req: Request) {
++  try {
++    let body: any = {};
++
++    try {
++      body = await req.json();
++    } catch {
++      body = {};
++    }
++
++    const seed = body.seed || getTodaysClusterSeed();
++    const topics = getClusterTopics(seed).slice(0, Number(body.limit || 6));
++    const clusterId = String(body.clusterId || seed.niche)
++      .toLowerCase()
++      .replace(/[^a-z0-9]+/g, '-')
++      .replace(/(^-|-$)/g, '');
++
++    const posts = [];
++
++    for (const topic of topics) {
++      const post = await generateDailyDraft({
++        topic: topic.title,
++        category: topic.category,
++        niche: topic.niche,
++        clusterId,
++        clusterRole: topic.clusterRole as 'pillar' | 'supporting',
++        source: 'admin-cluster-generator',
++      });
++
++      posts.push(post);
++    }
++
++    return NextResponse.json({ ok: true, clusterId, posts });
++  } catch (error: any) {
++    console.error('GENERATE CLUSTER ERROR:', error);
++
++    return NextResponse.json(
++      { ok: false, error: error?.message || 'Failed to generate cluster' },
++      { status: 500 }
++    );
++  }
++}
