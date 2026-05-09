@@ -188,7 +188,7 @@ async function generateNewClusters(
   existingNiches: string[],
   batchSize = 8,
 ): Promise<ClusterSeed[]> {
-  const categories = ['Beginner Guide', 'Side Hustles', 'Tools', 'Pinterest'];
+  const categories = ['Beginner Guide', 'Side Hustles', 'Tools', 'Pinterest', 'Beginner Online Income', 'Freelancing'];
 
   const existingList = existingNiches
     .slice(-40)
@@ -343,7 +343,31 @@ export async function getTodaysClusterSeed(date = new Date()): Promise<ClusterSe
  * Use getTodaysClusterSeed() (async) for the AI-powered version.
  */
 export function getTodaysClusterSeedSync(date = new Date()): ClusterSeed {
-  return contentClusters[date.getUTCDate() % contentClusters.length];
+  return contentClusters[date.getUTCDate() % contentClusters.length{
+    niche: 'beginner online income from zero',
+    category: 'Beginner Online Income',
+    pillarTitle: 'How to Start Making Money Online as a Complete Beginner',
+    supportingTitles: [
+      'Realistic Online Income Ideas for Beginners With No Audience',
+      'How to Earn Your First Dollar Online With No Experience',
+      'Common Beginner Online Income Mistakes and How to Avoid Them',
+      'How to Set Realistic Goals for Your First Online Income',
+      'How to Track and Grow Your Online Income as a Beginner',
+    ],
+  },
+  {
+    niche: 'freelancing for beginners with no portfolio',
+    category: 'Freelancing',
+    pillarTitle: 'How to Start Freelancing With No Portfolio or Experience',
+    supportingTitles: [
+      'Best Beginner Freelance Skills You Can Learn in a Week',
+      'How to Write a Freelance Proposal That Gets Replies',
+      'How to Find Your First Freelance Client Without Paid Ads',
+      'Fiverr vs Upwork: Which Is Better for Absolute Beginners',
+      'How to Set Your Freelance Rates When You Are Just Starting Out',
+    ],
+  },
+];
 }
 
 export function getClusterTopics(seed: ClusterSeed) {

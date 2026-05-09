@@ -10,7 +10,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Types
 // ---------------------------------------------------------------------------
 
-type Category = 'Beginner Guide' | 'Side Hustles' | 'Tools' | 'Pinterest';
+type Category = 'Beginner Guide' | 'Side Hustles' | 'Tools' | 'Pinterest' | 'Beginner Online Income' | 'Freelancing';
 
 type DraftTopic = {
   topic: string;
@@ -67,7 +67,25 @@ const SEED_TOPICS: DraftTopic[] = [
   { topic: 'how to turn common questions into helpful blog posts', category: 'Beginner Guide' },
   { topic: 'how to create a simple service page for your first offer', category: 'Tools' },
   { topic: 'how to get side hustle ideas from skills you already have', category: 'Side Hustles' },
-  { topic: 'how to organize blog topics into content clusters', category: 'Tools' },
+{ topic: 'how to organize blog topics into content clusters', category: 'Tools' },
+
+  // Beginner Online Income
+  { topic: 'how to earn your first dollar online with no experience', category: 'Beginner Online Income' },
+  { topic: 'realistic ways beginners can make money online this year', category: 'Beginner Online Income' },
+  { topic: 'how to build a simple online income stream from scratch', category: 'Beginner Online Income' },
+  { topic: 'beginner mistakes to avoid when starting an online income', category: 'Beginner Online Income' },
+  { topic: 'how to set realistic online income goals as a beginner', category: 'Beginner Online Income' },
+  { topic: 'passive income ideas for beginners with no money to invest', category: 'Beginner Online Income' },
+  { topic: 'how to track your first online income as a beginner', category: 'Beginner Online Income' },
+
+  // Freelancing
+  { topic: 'how to start freelancing with no experience or portfolio', category: 'Freelancing' },
+  { topic: 'best beginner freelance skills that are easy to learn fast', category: 'Freelancing' },
+  { topic: 'how to write a freelance proposal that gets a response', category: 'Freelancing' },
+  { topic: 'how to find your first freelance client for free', category: 'Freelancing' },
+  { topic: 'Fiverr vs Upwork for beginners: which platform is better', category: 'Freelancing' },
+  { topic: 'how to set your freelance rates as a complete beginner', category: 'Freelancing' },
+  { topic: 'how to build a simple freelance portfolio with no paid work', category: 'Freelancing' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -167,7 +185,7 @@ async function generateNewTopics(
   existingTopics: string[],
   batchSize = 30,
 ): Promise<GeneratedTopicItem[]> {
-  const categories: Category[] = ['Beginner Guide', 'Side Hustles', 'Tools', 'Pinterest'];
+  const categories: Category[] = ['Beginner Guide', 'Side Hustles', 'Tools', 'Pinterest', 'Beginner Online Income', 'Freelancing'];
 
   // Send up to 80 recent known topics to avoid duplication
   const existingList = existingTopics
