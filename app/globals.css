@@ -1800,3 +1800,37 @@ p {
     font-size: 24px;
   }
 }
+/* Balanced topic cards */
+.topic-grid {
+  align-items: stretch;
+}
+
+.topic-grid-spacious {
+  margin-top: 48px;
+}
+
+.topic-card {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.topic-card h2,
+.topic-card h3 {
+  line-height: 1.05;
+}
+
+.topic-card p {
+  margin-top: 14px;
+  line-height: 1.65;
+  color: #6f675e;
+}
+
+.topic-link {
+  display: inline-block;
+  margin-top: 24px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #111;
+}

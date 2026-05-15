@@ -6,12 +6,30 @@ import { formatArticleMarkdown } from '@/lib/articleFormat';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Category = 'Beginner Guide' | 'Side Hustles' | 'Tools' | 'Pinterest' | 'Beginner Online Income' | 'Freelancing';
+
 type DraftTopic = {
   topic: string;
-  category: 'Beginner Guide' | 'Side Hustles' | 'Tools' | 'Pinterest';
+  category: Category;
 };
 
-const topics: DraftTopic[] = [
+type InternalLink = {
+  title: string;
+  slug: string;
+  category?: string;
+  excerpt?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Seed topics — used ONLY as fallback when the DB keyword bank is empty.
+// The AI expander takes over as soon as at least one batch has been generated.
+// ---------------------------------------------------------------------------
+
+const SEED_TOPICS: DraftTopic[] = [
   { topic: 'how to make your first online income with one beginner-friendly service', category: 'Beginner Guide' },
   { topic: 'Pinterest blog traffic plan for a new beginner income blog', category: 'Pinterest' },
   { topic: 'best free tools for starting a small online income project', category: 'Tools' },
@@ -32,8 +50,6 @@ const topics: DraftTopic[] = [
   { topic: 'how to use Pinterest boards to organize blog traffic topics', category: 'Pinterest' },
   { topic: 'beginner guide to creating digital products with free tools', category: 'Tools' },
   { topic: 'realistic online income ideas for beginners who want low risk', category: 'Beginner Guide' },
-
-  // Print-on-demand and Redbubble cluster
   { topic: 'how to start a print on demand side hustle with no budget', category: 'Side Hustles' },
   { topic: 'how to design simple products for Redbubble beginners', category: 'Side Hustles' },
   { topic: 'how to choose a niche for print on demand products', category: 'Beginner Guide' },
@@ -44,8 +60,6 @@ const topics: DraftTopic[] = [
   { topic: 'how to make simple quote designs for print on demand', category: 'Side Hustles' },
   { topic: 'how to use Canva for print on demand product ideas', category: 'Tools' },
   { topic: 'how to create a weekly content plan for a Redbubble shop', category: 'Beginner Guide' },
-
-  // More variety for daily drafts
   { topic: 'how to validate a side hustle idea before spending money', category: 'Beginner Guide' },
   { topic: 'how to create your first simple digital download', category: 'Tools' },
   { topic: 'how to use Pinterest keywords before writing a blog post', category: 'Pinterest' },
@@ -53,15 +67,356 @@ const topics: DraftTopic[] = [
   { topic: 'how to turn common questions into helpful blog posts', category: 'Beginner Guide' },
   { topic: 'how to create a simple service page for your first offer', category: 'Tools' },
   { topic: 'how to get side hustle ideas from skills you already have', category: 'Side Hustles' },
-  { topic: 'how to organize blog topics into content clusters', category: 'Tools' },
+{ topic: 'how to organize blog topics into content clusters', category: 'Tools' },
+
+  // Beginner Online Income
+  { topic: 'how to earn your first dollar online with no experience', category: 'Beginner Online Income' },
+  { topic: 'realistic ways beginners can make money online this year', category: 'Beginner Online Income' },
+  { topic: 'how to build a simple online income stream from scratch', category: 'Beginner Online Income' },
+  { topic: 'beginner mistakes to avoid when starting an online income', category: 'Beginner Online Income' },
+  { topic: 'how to set realistic online income goals as a beginner', category: 'Beginner Online Income' },
+  { topic: 'passive income ideas for beginners with no money to invest', category: 'Beginner Online Income' },
+  { topic: 'how to track your first online income as a beginner', category: 'Beginner Online Income' },
+
+  // Freelancing
+  { topic: 'how to start freelancing with no experience or portfolio', category: 'Freelancing' },
+  { topic: 'best beginner freelance skills that are easy to learn fast', category: 'Freelancing' },
+  { topic: 'how to write a freelance proposal that gets a response', category: 'Freelancing' },
+  { topic: 'how to find your first freelance client for free', category: 'Freelancing' },
+  { topic: 'Fiverr vs Upwork for beginners: which platform is better', category: 'Freelancing' },
+  { topic: 'how to set your freelance rates as a complete beginner', category: 'Freelancing' },
+  { topic: 'how to build a simple freelance portfolio with no paid work', category: 'Freelancing' },
+
+
+  // More Beginner Online Income depth
+  { topic: 'how to choose your first online income path as a beginner', category: 'Beginner Online Income' },
+  { topic: 'how to make your first online income plan for the next 30 days', category: 'Beginner Online Income' },
+  { topic: 'online income skills beginners can practice for free', category: 'Beginner Online Income' },
+  { topic: 'how to compare beginner online income ideas without getting overwhelmed', category: 'Beginner Online Income' },
+  { topic: 'how to avoid shiny object syndrome when starting online income', category: 'Beginner Online Income' },
+  { topic: 'how to turn a small skill into your first online income project', category: 'Beginner Online Income' },
+  { topic: 'best low risk online income ideas for complete beginners', category: 'Beginner Online Income' },
+
+  // More Freelancing depth
+  { topic: 'freelance services beginners can offer without a degree', category: 'Freelancing' },
+  { topic: 'how to create your first freelance package in one afternoon', category: 'Freelancing' },
+  { topic: 'how to send a simple cold email for freelance work', category: 'Freelancing' },
+  { topic: 'how to make a freelance portfolio from practice projects', category: 'Freelancing' },
+  { topic: 'beginner freelance mistakes that make clients ignore you', category: 'Freelancing' },
+  { topic: 'how to turn content writing into a beginner freelance service', category: 'Freelancing' },
+  { topic: 'how to offer simple virtual assistant services as a beginner', category: 'Freelancing' },
 ];
 
-type InternalLink = {
-  title: string;
-  slug: string;
-  category?: string;
-  excerpt?: string;
+// ---------------------------------------------------------------------------
+// Keyword bank — persisted in the `topic_bank` DB table
+// ---------------------------------------------------------------------------
+
+async function ensureTopicBankTable() {
+  await sql`
+    create table if not exists topic_bank (
+      id         uuid primary key default gen_random_uuid(),
+      topic      text not null unique,
+      category   text not null,
+      used       boolean not null default false,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists topic_bank_used_idx on topic_bank(used)`;
+}
+
+async function countUnusedTopics(): Promise<number> {
+  await ensureTopicBankTable();
+  const [row] = await sql`select count(*) as n from topic_bank where used = false`;
+  return Number((row as any).n ?? 0);
+}
+
+async function loadUnusedTopics(): Promise<DraftTopic[]> {
+  await ensureTopicBankTable();
+  const rows = await sql`
+    select topic, category from topic_bank
+    where used = false
+    order by created_at asc
+  `;
+  return rows.map((r: any) => ({ topic: String(r.topic), category: String(r.category) as Category }));
+}
+
+async function markTopicUsed(topic: string) {
+  await sql`update topic_bank set used = true where topic = ${topic}`;
+}
+
+// ---------------------------------------------------------------------------
+// Deduplication helpers
+// ---------------------------------------------------------------------------
+
+function normalise(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function wordSet(value: string): Set<string> {
+  return new Set(
+    normalise(value)
+      .split(' ')
+      .filter((w) => w.length > 3),
+  );
+}
+
+function similarity(a: string, b: string): number {
+  const aWords = wordSet(a);
+  const bWords = wordSet(b);
+  if (!aWords.size || !bWords.size) return 0;
+  let overlap = 0;
+  for (const w of aWords) if (bWords.has(w)) overlap++;
+  return overlap / Math.min(aWords.size, bWords.size);
+}
+
+// ---------------------------------------------------------------------------
+// All known topics (for deduplication during expansion)
+// ---------------------------------------------------------------------------
+
+async function getAllKnownTopics(): Promise<string[]> {
+  await ensureTopicBankTable();
+
+  const bankRows = await sql`select topic from topic_bank`;
+  const bankTopics = bankRows.map((r: any) => String(r.topic));
+
+  const postRows = await sql`select title, primary_keyword from posts`;
+  const postTopics = postRows
+    .flatMap((r: any) => [String(r.title || ''), String(r.primary_keyword || '')])
+    .filter(Boolean);
+
+  return [...bankTopics, ...postTopics];
+}
+
+// ---------------------------------------------------------------------------
+// AI keyword expander
+// ---------------------------------------------------------------------------
+
+type GeneratedTopicItem = {
+  topic: string;
+  category: Category;
 };
+
+async function generateNewTopics(
+  existingTopics: string[],
+  batchSize = 30,
+): Promise<GeneratedTopicItem[]> {
+  const categories: Category[] = ['Beginner Guide', 'Side Hustles', 'Tools', 'Pinterest', 'Beginner Online Income', 'Freelancing'];
+
+  // Send up to 80 recent known topics to avoid duplication
+  const existingList = existingTopics
+    .slice(-80)
+    .map((t) => `- ${t}`)
+    .join('\n');
+
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+    temperature: 0.95,
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content: `You are a senior content strategist for HustlePathDaily, a beginner-friendly blog about online income, side hustles, tools, and Pinterest traffic.
+
+Your job is to generate a batch of fresh, unique article topic ideas that:
+- Are NOT duplicates or near-duplicates of existing topics
+- Are practical and actionable for beginners
+- Cover a wide variety of angles
+- Would genuinely help someone starting their first side hustle or online income stream
+
+Return JSON only. No markdown outside JSON.`,
+      },
+      {
+        role: 'user',
+        content: `Generate exactly ${batchSize} UNIQUE article topic ideas for HustlePathDaily.
+
+SITE NICHE: Beginner online income, side hustles, Pinterest marketing, and helpful tools.
+
+ALLOWED CATEGORIES: ${categories.join(', ')}
+
+RULES:
+- Each topic must be a clear, specific blog post angle
+- Do NOT duplicate or closely paraphrase any of these already-used topics:
+${existingList || '(none yet — this is the first batch)'}
+
+- Span a wide range of angles: money-making methods, platforms, skills, mindsets, tools, workflows, Pinterest strategies, digital products, freelancing, content creation, Redbubble/print-on-demand, Etsy, Gumroad, email lists, Ko-fi, Fiverr, Upwork, Substack, etc.
+- Beginner-friendly framing only — no advanced or technical topics
+- No income promises or hype (no "make $10k fast")
+- Vary the category distribution across all six allowed categories
+- Prioritize more Freelancing and Beginner Online Income topics until those sections feel as deep as the other categories
+- Include 2–3 seasonal or trend-adjacent angles (e.g. holiday print-on-demand, Q4 content planning)
+- Include 2–3 that address common beginner fears, myths, or misconceptions
+- Include 2–3 that compare beginner-friendly platforms or approaches
+- Include 2–3 about under-discussed platforms (Ko-fi, Gumroad, Substack, Fiverr, etc.)
+
+Return JSON:
+{
+  "topics": [
+    { "topic": "...", "category": "Beginner Guide" },
+    { "topic": "...", "category": "Side Hustles" },
+    ...
+  ]
+}`,
+      },
+    ],
+  });
+
+  const raw = safeJsonParse(completion.choices[0].message.content || '{}');
+  if (!Array.isArray(raw?.topics)) return [];
+
+  return (raw.topics as any[])
+    .filter((item) => item?.topic && categories.includes(item?.category))
+    .map((item) => ({
+      topic: String(item.topic).trim(),
+      category: item.category as Category,
+    }));
+}
+
+async function expandTopicBank(minUnused = 15, batchSize = 30) {
+  const unusedCount = await countUnusedTopics();
+  if (unusedCount >= minUnused) return; // bank is healthy, nothing to do
+
+  const known = await getAllKnownTopics();
+  const newTopics = await generateNewTopics(known, batchSize);
+
+  // Build a normalised set of everything we already know
+  const knownNorm = new Set(known.map(normalise));
+
+  for (const item of newTopics) {
+    const norm = normalise(item.topic);
+
+    // Skip if too similar to anything known
+    const isDuplicate =
+      knownNorm.has(norm) ||
+      [...knownNorm].some((k) => similarity(item.topic, k) >= 0.55);
+
+    if (isDuplicate) continue;
+
+    try {
+      await sql`
+        insert into topic_bank (topic, category)
+        values (${item.topic}, ${item.category})
+        on conflict (topic) do nothing
+      `;
+      knownNorm.add(norm); // prevent within-batch duplicates
+    } catch {
+      // ignore unique-constraint violations
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Topic selection
+// ---------------------------------------------------------------------------
+
+function shuffle<T>(items: T[]): T[] {
+  return [...items].sort(() => Math.random() - 0.5);
+}
+
+async function getRecentTitles(): Promise<string[]> {
+  const rows = await sql`
+    select title, primary_keyword
+    from posts
+    order by created_at desc
+    limit 60
+  `;
+  return rows
+    .flatMap((r: any) => [String(r.title || ''), String(r.primary_keyword || '')])
+    .filter(Boolean);
+}
+
+async function getPublishedCategoryCounts(): Promise<Record<string, number>> {
+  const rows = await sql`
+    select category, count(*)::int as post_count
+    from posts
+    where status = 'published'
+      and category is not null
+      and slug is not null
+      and body is not null
+      and length(body) > 300
+    group by category
+  `;
+
+  return Object.fromEntries(
+    rows.map((row: any) => [String(row.category || ''), Number(row.post_count || 0)]),
+  );
+}
+
+function priorityCategory(counts: Record<string, number>): Category | null {
+  const priority: Category[] = ['Freelancing', 'Beginner Online Income'];
+  const categories: Category[] = [
+    'Beginner Guide',
+    'Side Hustles',
+    'Tools',
+    'Pinterest',
+    'Beginner Online Income',
+    'Freelancing',
+  ];
+
+  const highest = Math.max(...categories.map((category) => counts[category] || 0), 0);
+  const underbuiltPriority = priority.find((category) => (counts[category] || 0) < Math.max(3, highest - 4));
+  if (underbuiltPriority) return underbuiltPriority;
+
+  return categories
+    .slice()
+    .sort((a, b) => (counts[a] || 0) - (counts[b] || 0))[0];
+}
+
+async function chooseDailyTopic(options?: {
+  topic?: string;
+  category?: string;
+}): Promise<DraftTopic> {
+  // Manual override
+  if (options?.topic) {
+    return {
+      topic: options.topic,
+      category: (options.category as Category) || 'Beginner Guide',
+    };
+  }
+
+  // Keep the bank topped up (no-op if already healthy)
+  await expandTopicBank(20, 36);
+
+  const recentTitles = await getRecentTitles();
+  const unused = await loadUnusedTopics();
+  const counts = await getPublishedCategoryCounts();
+  const preferredCategory = priorityCategory(counts);
+
+  const isFresh = (candidate: DraftTopic) =>
+    !recentTitles.some((title) => similarity(candidate.topic, title) >= 0.45);
+
+  // Primary: pick from DB bank, but prioritize categories that are underbuilt.
+  if (unused.length > 0) {
+    const candidates = shuffle(unused);
+    const preferred = preferredCategory
+      ? candidates.filter((candidate) => candidate.category === preferredCategory)
+      : [];
+
+    const chosen =
+      preferred.find(isFresh) ||
+      candidates.find(isFresh) ||
+      preferred[0] ||
+      candidates[0];
+
+    await markTopicUsed(chosen.topic);
+    return chosen;
+  }
+
+  // Fallback: use seed list, also prioritizing underbuilt categories.
+  const candidates = shuffle(SEED_TOPICS);
+  const preferred = preferredCategory
+    ? candidates.filter((candidate) => candidate.category === preferredCategory)
+    : [];
+
+  return preferred.find(isFresh) || candidates.find(isFresh) || preferred[0] || candidates[0];
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
 function safeJsonParse(raw: string) {
   try {
@@ -77,53 +432,18 @@ function safeJsonParse(raw: string) {
   }
 }
 
-function shuffle<T>(items: T[]) {
-  return [...items].sort(() => Math.random() - 0.5);
-}
+async function makeUniqueSlug(baseSlug: string): Promise<string> {
+  const clean =
+    slugify(baseSlug || 'hustlepath-draft', { lower: true, strict: true }) ||
+    'hustlepath-draft';
 
-function words(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 3);
-}
-
-function similarity(a: string, b: string) {
-  const aWords = new Set(words(a));
-  const bWords = new Set(words(b));
-  if (!aWords.size || !bWords.size) return 0;
-
-  let overlap = 0;
-  for (const word of aWords) {
-    if (bWords.has(word)) overlap += 1;
-  }
-
-  return overlap / Math.min(aWords.size, bWords.size);
-}
-
-async function makeUniqueSlug(baseSlug: string) {
-  const cleanBaseSlug =
-    slugify(baseSlug || 'hustlepath-draft', {
-      lower: true,
-      strict: true,
-    }) || 'hustlepath-draft';
-
-  let slug = cleanBaseSlug;
+  let slug = clean;
   let counter = 2;
 
   while (true) {
-    const existing = await sql`
-      select id
-      from posts
-      where slug = ${slug}
-      limit 1
-    `;
-
+    const existing = await sql`select id from posts where slug = ${slug} limit 1`;
     if (existing.length === 0) return slug;
-
-    slug = `${cleanBaseSlug}-${counter}`;
-    counter++;
+    slug = `${clean}-${counter++}`;
   }
 }
 
@@ -138,7 +458,6 @@ async function getInternalLinks(): Promise<InternalLink[]> {
     order by published_at desc nulls last, created_at desc
     limit 12
   `;
-
   return rows.map((row: any) => ({
     title: String(row.title || ''),
     slug: String(row.slug || ''),
@@ -147,62 +466,49 @@ async function getInternalLinks(): Promise<InternalLink[]> {
   }));
 }
 
-function internalLinksForPrompt(links: InternalLink[]) {
-  if (!links.length) return 'No published internal links exist yet. Do not include any /blog links.';
-
+function internalLinksForPrompt(links: InternalLink[]): string {
+  if (!links.length)
+    return 'No published internal links exist yet. Do not include any /blog links.';
   return links
     .map(
       (post) =>
-        `- Title: ${post.title}\n  URL: /blog/${post.slug}\n  Category: ${post.category || 'General'}\n  Context: ${post.excerpt || 'Related HustlePathDaily article'}`
+        `- Title: ${post.title}\n  URL: /blog/${post.slug}\n  Category: ${post.category || 'General'}\n  Context: ${post.excerpt || 'Related HustlePathDaily article'}`,
     )
     .join('\n');
 }
 
-async function getRecentTitles() {
-  const rows = await sql`
-    select title
-    from posts
-    order by created_at desc
-    limit 40
-  `;
-
-  return rows.map((row: any) => String(row.title || '')).filter(Boolean);
+function wordCount(text: string): number {
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean).length;
 }
 
-async function chooseDailyTopic(options?: { topic?: string; category?: string }): Promise<DraftTopic> {
-  if (options?.topic) {
-    return {
-      topic: options.topic,
-      category: (options.category as DraftTopic['category']) || 'Beginner Guide',
-    };
-  }
-
-  const recentTitles = await getRecentTitles();
-  const candidates = shuffle(topics);
-  const fresh = candidates.find((candidate) => {
-    return !recentTitles.some((title) => similarity(candidate.topic, title) >= 0.45);
-  });
-
-  return fresh || candidates[0];
-}
-
-function wordCount(text: string) {
-  return String(text || '').split(/\s+/).filter(Boolean).length;
-}
-
-function stripInventedInternalLinks(markdown: string, links: InternalLink[]) {
-  const allowed = new Set(links.map((link) => `/blog/${link.slug}`));
-
+function stripInventedInternalLinks(
+  markdown: string,
+  links: InternalLink[],
+): string {
+  const allowed = new Set(links.map((l) => `/blog/${l.slug}`));
   return String(markdown || '')
     .replace(/\[([^\]]+)\]\(#\)/g, '$1')
-    .replace(/\[([^\]]+)\]\((\/blog\/[^)]+)\)/g, (match, label, url) => {
-      if (allowed.has(url)) return match;
-      return String(label);
-    })
-    .replace(/\n-{3,}\n(?=\s*(Related Articles|Related Posts|Recommended Reading))/gi, '\n');
+    .replace(/\[([^\]]+)\]\((\/blog\/[^)]+)\)/g, (match, label, url) =>
+      allowed.has(url) ? match : String(label),
+    )
+    .replace(
+      /\n-{3,}\n(?=\s*(Related Articles|Related Posts|Recommended Reading))/gi,
+      '\n',
+    );
 }
 
-async function generateArticleJson(topic: string, category: string, links: InternalLink[], recentTitles: string[] = []) {
+// ---------------------------------------------------------------------------
+// Article generation
+// ---------------------------------------------------------------------------
+
+async function generateArticleJson(
+  topic: string,
+  category: string,
+  links: InternalLink[],
+  recentTitles: string[] = [],
+) {
   const completion = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
     temperature: 0.75,
@@ -210,27 +516,24 @@ async function generateArticleJson(topic: string, category: string, links: Inter
     messages: [
       {
         role: 'system',
-        content: `
-You are the senior SEO editor for HustlePathDaily.
+        content: `You are the senior SEO editor for HustlePathDaily.
 
 Your job is to create a publish-ready article on the FIRST draft.
 
 The article must be practical, beginner-friendly, specific, and structured well enough to score 85+ without needing a separate polish pass.
 
-Return JSON only. No markdown outside the JSON.
-`,
+Return JSON only. No markdown outside the JSON.`,
       },
       {
         role: 'user',
-        content: `
-Write a complete HustlePathDaily blog post about:
+        content: `Write a complete HustlePathDaily blog post about:
 
 ${topic}
 
 Target category: ${category}
 
 Do not reuse or closely copy any of these recent titles:
-${recentTitles.map((title) => `- ${title}`).join('\n') || '- No recent titles yet'}
+${recentTitles.map((t) => `- ${t}`).join('\n') || '- No recent titles yet'}
 
 STRICT OUTPUT RULES:
 Return valid JSON with exactly these keys:
@@ -317,8 +620,7 @@ INTERNAL_LINKS:
 Return an array of objects only for links actually used in the body:
 [
   { "title": "Exact existing title", "url": "/blog/exact-existing-slug" }
-]
-`,
+]`,
       },
     ],
   });
@@ -344,20 +646,17 @@ async function lightPolishArticle(input: {
     messages: [
       {
         role: 'system',
-        content: `
-You are an SEO editor.
+        content: `You are an SEO editor.
 
 Improve the article enough to pass an 85+ SEO score.
 Do not change the topic.
 Do not make fake claims.
 Do not remove useful sections.
-Return JSON only.
-`,
+Return JSON only.`,
       },
       {
         role: 'user',
-        content: `
-Fix this article so it scores 85+.
+        content: `Fix this article so it scores 85+.
 
 You must ensure:
 - 1300+ words
@@ -416,15 +715,18 @@ ${JSON.stringify(
     related_keywords: input.relatedKeywords,
   },
   null,
-  2
-)}
-`,
+  2,
+)}`,
       },
     ],
   });
 
   return safeJsonParse(completion.choices[0].message.content || '{}');
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export async function generateDailyDraft(options?: {
   topic?: string;
@@ -437,27 +739,27 @@ export async function generateDailyDraft(options?: {
   const internalLinks = await getInternalLinks();
   const recentTitles = await getRecentTitles();
 
-  let data = await generateArticleJson(topic, chosen.category, internalLinks, recentTitles);
+  let data = await generateArticleJson(
+    topic,
+    chosen.category,
+    internalLinks,
+    recentTitles,
+  );
 
   let title = String(data.title || 'Untitled HustlePath Draft');
   let excerpt = String(data.excerpt || 'A practical beginner guide from HustlePathDaily.');
-  let body = formatArticleMarkdown(stripInventedInternalLinks(String(data.body || ''), internalLinks));
+  let body = formatArticleMarkdown(
+    stripInventedInternalLinks(String(data.body || ''), internalLinks),
+  );
   let category = String(options?.category || data.category || chosen.category || 'Beginner Guide');
   let seoTitle = String(data.seo_title || title);
   let seoDescription = String(data.seo_description || excerpt);
   let primaryKeyword = String(data.primary_keyword || '');
   let relatedKeywords = Array.isArray(data.related_keywords) ? data.related_keywords : [];
-  let pinterestMeta = data.pinterest_meta && typeof data.pinterest_meta === 'object' ? data.pinterest_meta : {};
+  let pinterestMeta =
+    data.pinterest_meta && typeof data.pinterest_meta === 'object' ? data.pinterest_meta : {};
 
-  let seo = scorePost({
-    title,
-    excerpt,
-    body,
-    seoTitle,
-    seoDescription,
-    primaryKeyword,
-  });
-
+  let seo = scorePost({ title, excerpt, body, seoTitle, seoDescription, primaryKeyword });
   let autoPolished = false;
 
   if (seo.score < 85 || wordCount(body) < 1200) {
@@ -475,7 +777,9 @@ export async function generateDailyDraft(options?: {
 
     title = String(polished.title || title);
     excerpt = String(polished.excerpt || excerpt);
-    body = formatArticleMarkdown(stripInventedInternalLinks(String(polished.body || body), internalLinks));
+    body = formatArticleMarkdown(
+      stripInventedInternalLinks(String(polished.body || body), internalLinks),
+    );
     category = String(options?.category || polished.category || category);
     seoTitle = String(polished.seo_title || title);
     seoDescription = String(polished.seo_description || excerpt);
@@ -483,9 +787,10 @@ export async function generateDailyDraft(options?: {
     relatedKeywords = Array.isArray(polished.related_keywords)
       ? polished.related_keywords
       : relatedKeywords;
-    pinterestMeta = polished.pinterest_meta && typeof polished.pinterest_meta === 'object'
-      ? polished.pinterest_meta
-      : pinterestMeta;
+    pinterestMeta =
+      polished.pinterest_meta && typeof polished.pinterest_meta === 'object'
+        ? polished.pinterest_meta
+        : pinterestMeta;
 
     data = {
       ...data,
@@ -493,15 +798,7 @@ export async function generateDailyDraft(options?: {
       internal_links: polished.internal_links || data.internal_links || [],
     };
 
-    seo = scorePost({
-      title,
-      excerpt,
-      body,
-      seoTitle,
-      seoDescription,
-      primaryKeyword,
-    });
-
+    seo = scorePost({ title, excerpt, body, seoTitle, seoDescription, primaryKeyword });
     autoPolished = true;
   }
 
@@ -509,15 +806,9 @@ export async function generateDailyDraft(options?: {
     throw new Error('Generated article body was empty or too short. Try generating again.');
   }
 
-  const baseSlug = slugify(String(data.slug || title), {
-    lower: true,
-    strict: true,
-  });
-
+  const baseSlug = slugify(String(data.slug || title), { lower: true, strict: true });
   const slug = await makeUniqueSlug(baseSlug);
-
-  const autoPublish =
-    process.env.AUTO_PUBLISH_DAILY_DRAFTS === 'true' && seo.score >= 85;
+  const autoPublish = process.env.AUTO_PUBLISH_DAILY_DRAFTS === 'true' && seo.score >= 85;
 
   const [post] = await sql`
     insert into posts (
@@ -555,4 +846,12 @@ export async function generateDailyDraft(options?: {
   `;
 
   return post;
+}
+
+/**
+ * Manually trigger a topic bank expansion.
+ * Useful from an admin route or scheduled job to pre-warm the bank.
+ */
+export async function refillTopicBank(batchSize = 40) {
+  await expandTopicBank(0, batchSize);
 }

@@ -4,6 +4,51 @@ import { sql } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+export const metadata = {
+  title: 'Topics | Hustle Path Daily',
+  description:
+    'Browse beginner-friendly guides about online income, freelancing, Pinterest, side hustles, and useful tools.',
+};
+
+const FEATURED_TOPICS = [
+  {
+    title: 'Beginner Guide',
+    slug: 'beginner-guide',
+    description:
+      'Simple step-by-step guides for beginners who want a practical starting point.',
+  },
+  {
+    title: 'Beginner Online Income',
+    slug: 'beginner-online-income',
+    description:
+      'Realistic ways to start earning online without hype, big promises, or confusing setup.',
+  },
+  {
+    title: 'Freelancing',
+    slug: 'freelancing',
+    description:
+      'Beginner freelance skills, service offers, client outreach, pricing, and portfolio tips.',
+  },
+  {
+    title: 'Pinterest',
+    slug: 'pinterest',
+    description:
+      'Pinterest SEO, pin strategy, board planning, and organic traffic ideas for beginners.',
+  },
+  {
+    title: 'Side Hustles',
+    slug: 'side-hustles',
+    description:
+      'Beginner-friendly side hustle ideas you can test without overcomplicating the process.',
+  },
+  {
+    title: 'Tools',
+    slug: 'tools',
+    description:
+      'Useful tools, AI workflows, templates, and simple systems for building online income.',
+  },
+];
+
 function slugifyCategory(category: string) {
   return category
     .toLowerCase()
@@ -13,10 +58,8 @@ function slugifyCategory(category: string) {
 }
 
 export default async function TopicsPage() {
-  const categories = await sql`
-    select
-      category,
-      count(*)::int as post_count
+  const rows = await sql`
+    select category, count(*)::int as post_count
     from posts
     where status = 'published'
       and category is not null
@@ -24,8 +67,14 @@ export default async function TopicsPage() {
       and body is not null
       and length(body) > 300
     group by category
-    order by category asc
   `;
+
+  const counts = new Map(
+    (rows as any[]).map((row) => [
+      slugifyCategory(String(row.category || '')),
+      Number(row.post_count || 0),
+    ]),
+  );
 
   return (
     <main className="page-shell">
@@ -35,76 +84,27 @@ export default async function TopicsPage() {
         <h1 className="article-title">Browse by category.</h1>
 
         <p className="article-excerpt">
-          Focused guides based on the published articles currently live on HustlePathDaily.
+          Pick a path and start with beginner-friendly guides that match your goal.
         </p>
 
-        {categories.length > 0 ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: '28px',
-              marginTop: '48px',
-            }}
-          >
-            {(categories as any[]).map((item) => {
-              const category = String(item.category || 'Guide');
-              const href = `/category/${slugifyCategory(category)}`;
+        <div className="topic-grid topic-grid-spacious">
+          {FEATURED_TOPICS.map((topic) => {
+            const count = counts.get(topic.slug) || 0;
 
-              return (
-                <Link
-                  key={category}
-                  href={href}
-                  style={{
-                    display: 'block',
-                    border: '1px solid #ddd2c4',
-                    borderRadius: '28px',
-                    background: '#fff',
-                    padding: '30px',
-                    color: '#111',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <h2
-                    style={{
-                      fontSize: '28px',
-                      lineHeight: '1.05',
-                      fontWeight: 900,
-                      marginBottom: '20px',
-                    }}
-                  >
-                    {category}
-                  </h2>
+            return (
+              <Link key={topic.slug} href={`/category/${topic.slug}`} className="topic-card">
+                <div>
+                  <h2>{topic.title}</h2>
+                  <p>{topic.description}</p>
+                </div>
 
-                  <p
-                    style={{
-                      color: '#6f675e',
-                      fontSize: '18px',
-                      lineHeight: '1.55',
-                      margin: 0,
-                    }}
-                  >
-                    {item.post_count} published {item.post_count === 1 ? 'guide' : 'guides'}.
-                  </p>
-                </Link>
-              );
-            })}
-          </div>
-        ) : (
-          <div
-            style={{
-              marginTop: '48px',
-              border: '1px solid #ddd2c4',
-              borderRadius: '28px',
-              background: '#fff',
-              padding: '30px',
-            }}
-          >
-            <p style={{ color: '#6f675e', fontWeight: 800 }}>
-              No published categories yet.
-            </p>
-          </div>
-        )}
+                <span className="topic-link">
+                  {count > 0 ? 'Explore guides' : 'Coming soon'} →
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </section>
     </main>
   );

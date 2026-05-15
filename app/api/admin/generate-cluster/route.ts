@@ -12,7 +12,8 @@ export async function POST(req: Request) {
       body = {};
     }
 
-    const seed = body.seed || getTodaysClusterSeed();
+    // Use the AI-powered async seed picker unless a manual seed was passed in
+    const seed = body.seed || (await getTodaysClusterSeed());
     const topics = getClusterTopics(seed).slice(0, Number(body.limit || 6));
     const clusterId = String(body.clusterId || seed.niche)
       .toLowerCase()
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       { ok: false, error: error?.message || 'Failed to generate cluster' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

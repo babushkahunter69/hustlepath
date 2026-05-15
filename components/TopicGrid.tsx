@@ -3,6 +3,45 @@ import { sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+const FEATURED_TOPICS = [
+  {
+    title: "Beginner Guide",
+    slug: "beginner-guide",
+    description:
+      "Simple step-by-step guides for beginners who want a practical starting point.",
+  },
+  {
+    title: "Beginner Online Income",
+    slug: "beginner-online-income",
+    description:
+      "Realistic ways to start earning online without hype, big promises, or confusing setup.",
+  },
+  {
+    title: "Freelancing",
+    slug: "freelancing",
+    description:
+      "Beginner freelance skills, service offers, client outreach, pricing, and portfolio tips.",
+  },
+  {
+    title: "Pinterest",
+    slug: "pinterest",
+    description:
+      "Pinterest SEO, pin strategy, board planning, and organic traffic ideas for beginners.",
+  },
+  {
+    title: "Side Hustles",
+    slug: "side-hustles",
+    description:
+      "Beginner-friendly side hustle ideas you can test without overcomplicating the process.",
+  },
+  {
+    title: "Tools",
+    slug: "tools",
+    description:
+      "Useful tools, AI workflows, templates, and simple systems for building online income.",
+  },
+];
+
 function slugifyCategory(category: string) {
   return category
     .toLowerCase()
@@ -12,7 +51,7 @@ function slugifyCategory(category: string) {
 }
 
 export default async function TopicGrid() {
-  const categories = await sql`
+  const rows = await sql`
     select category, count(*)::int as post_count
     from posts
     where status = 'published'
@@ -21,12 +60,14 @@ export default async function TopicGrid() {
       and body is not null
       and length(body) > 300
     group by category
-    order by category asc
   `;
 
-  if (categories.length === 0) {
-    return null;
-  }
+  const counts = new Map(
+    (rows as any[]).map((row) => [
+      slugifyCategory(String(row.category || "")),
+      Number(row.post_count || 0),
+    ]),
+  );
 
   return (
     <section>
@@ -35,24 +76,27 @@ export default async function TopicGrid() {
       <h2 className="section-title">Browse by category.</h2>
 
       <p className="section-subtitle">
-        Focused guides based on the published articles currently live on HustlePathDaily.
+        Beginner-friendly guides organized by the type of income path you want to explore.
       </p>
 
       <div className="topic-grid">
-        {(categories as any[]).map((item) => {
-          const category = String(item.category || "Guide");
+        {FEATURED_TOPICS.map((topic) => {
+          const count = counts.get(topic.slug) || 0;
 
           return (
             <Link
-              key={category}
-              href={`/category/${slugifyCategory(category)}`}
+              key={topic.slug}
+              href={`/category/${topic.slug}`}
               className="topic-card"
             >
-              <h3>{category}</h3>
-              <p>
-                {item.post_count} published{" "}
-                {item.post_count === 1 ? "guide" : "guides"}.
-              </p>
+              <div>
+                <h3>{topic.title}</h3>
+                <p>{topic.description}</p>
+              </div>
+
+              <span className="topic-link">
+                {count > 0 ? "Explore guides" : "Coming soon"} →
+              </span>
             </Link>
           );
         })}
