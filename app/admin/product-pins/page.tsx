@@ -129,6 +129,10 @@ export default async function ProductPinsPage() {
 
         {error && <div className="notice">Database not ready: {error}</div>}
 
+        <div className="notice">
+          Preview note: Pinterest may not display Vercel preview images inside Pin Builder. If the image opens correctly here, the final production URL should work after merge.
+        </div>
+
         <div className="stat-grid three">
           <div className="stat-card"><span>{totals.total}</span><p>Total product pins</p></div>
           <div className="stat-card"><span>{totals.draft}</span><p>Draft pins</p></div>
@@ -179,8 +183,7 @@ export default async function ProductPinsPage() {
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
-                      const cacheKey = encodeURIComponent(String(product.updated_at || product.created_at || index));
-                      const imageUrl = `${siteUrl}${imagePath}?v=${cacheKey}`;
+                      const imageUrl = `${siteUrl}${imagePath}`;
                       const trackedUrl = trackedPath.startsWith('http') ? trackedPath : `${siteUrl}${trackedPath}`;
                       const pinterestDescription = [pin.title, pin.description].filter(Boolean).join(' - ');
                       const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
@@ -194,6 +197,7 @@ export default async function ProductPinsPage() {
 
                           <div className="pin-tools">
                             <a href={imagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
+                            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open public image URL</a>
                             <a href={trackedPath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
                             <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">Open Pinterest</a>
                           </div>
@@ -214,7 +218,8 @@ export default async function ProductPinsPage() {
                           </form>
 
                           <details>
-                            <summary>Image prompt</summary>
+                            <summary>Creative direction</summary>
+                            <p>This is generated metadata for future template or AI-image upgrades. The current image uses the pin title, description, and product image only.</p>
                             <p>{pin.image_prompt}</p>
                           </details>
                         </div>
