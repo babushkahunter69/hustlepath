@@ -26,6 +26,8 @@ export type ProductCampaignInput = {
   count?: number;
 };
 
+type ProductPinSeed = Pick<ProductPinterestPin, 'angle' | 'title'>;
+
 function cleanText(value: unknown, fallback = '') {
   return String(value || fallback).replace(/\s+/g, ' ').trim();
 }
@@ -68,22 +70,23 @@ function fallbackPins(input: ProductCampaignInput): ProductPinterestPin[] {
   const title = cleanText(input.title, 'Redbubble Design');
   const niche = productNiche(input);
   const keywords = keywordPhrase(input);
-  const base = [
+  const base: ProductPinSeed[] = [
     { angle: 'product', title: `${title} Sticker Idea` },
-    { angle: 'gift', title: `Funny Gift For Creatives` },
-    { angle: 'problem', title: `Need A Small Gift Idea?` },
-    { angle: 'trend', title: `Trending Redbubble Find` },
-    { angle: 'collection', title: `Sticker Ideas To Save` },
-    { angle: 'curiosity', title: `This Design Feels Personal` },
-    { angle: 'style', title: `Cute Gift Shop Find` },
-    { angle: 'seasonal', title: `Easy Gift Idea To Pin` },
-  ] as const;
+    { angle: 'gift', title: 'Funny Gift For Creatives' },
+    { angle: 'problem', title: 'Need A Small Gift Idea?' },
+    { angle: 'trend', title: 'Trending Redbubble Find' },
+    { angle: 'collection', title: 'Sticker Ideas To Save' },
+    { angle: 'curiosity', title: 'This Design Feels Personal' },
+    { angle: 'style', title: 'Cute Gift Shop Find' },
+    { angle: 'seasonal', title: 'Easy Gift Idea To Pin' },
+  ];
 
-  return uniquePins(base).slice(0, input.count || 8).map((pin) => ({
-    ...pin,
+  return uniquePins<ProductPinSeed>(base).slice(0, input.count || 8).map((pin): ProductPinterestPin => ({
+    title: pin.title,
+    angle: pin.angle,
     description: `${pin.title}: discover a ${niche} design for people searching Pinterest for ${keywords}. Save this Redbubble find for sticker, shirt, mug, notebook, and gift inspiration.`.slice(0, 480),
     image_prompt: `Vertical 2:3 Pinterest product pin for ${title}. Use the product image if available, clean lifestyle layout, bold readable overlay text: "${pin.title}", warm neutral HustlePathDaily style, no fake discounts, no income claims.`,
-    status: 'draft' as const,
+    status: 'draft',
     created_at: now,
   }));
 }
