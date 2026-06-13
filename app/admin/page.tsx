@@ -119,6 +119,10 @@ export default async function Admin() {
             Product library
           </Link>
 
+          <Link href="/admin/product-pins" className="secondary-link">
+            Product pins
+          </Link>
+
           <Link href="/blog" className="secondary-link">
             View public blog
           </Link>
