@@ -4,6 +4,8 @@ import { sql } from '@/lib/db';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
+type Template = 'sticker' | 'shirt' | 'gift' | 'quote';
+
 function getPin(meta: any, index: number) {
   const source = meta && typeof meta === 'object' ? meta : {};
   const pins = Array.isArray(source.pins) ? source.pins : [];
@@ -14,19 +16,18 @@ function cleanText(value: unknown, fallback = '') {
   return String(value || fallback).replace(/\s+/g, ' ').trim();
 }
 
-function shortText(value: unknown, fallback: string, max = 90) {
-  const text = cleanText(value, fallback);
-  return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
+function titleCase(value: string) {
+  return value.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
-function splitTitle(value: string) {
+function splitTitle(value: string, maxLine = 13, maxLines = 5) {
   const words = cleanText(value).split(' ').filter(Boolean);
   const lines: string[] = [];
   let line = '';
 
   for (const word of words) {
     const next = line ? `${line} ${word}` : word;
-    if (next.length > 12 && line) {
+    if (next.length > maxLine && line) {
       lines.push(line);
       line = word;
     } else {
@@ -35,31 +36,108 @@ function splitTitle(value: string) {
   }
 
   if (line) lines.push(line);
-  return lines.slice(0, 5);
+  return lines.slice(0, maxLines);
 }
 
-function emojiFor(title: string) {
-  const text = title.toLowerCase();
-  if (text.includes('animal') || text.includes('raccoon')) return '🦝';
-  if (text.includes('frog')) return '🐸';
-  if (text.includes('goose')) return '🪿';
-  if (text.includes('otter')) return '🦦';
-  if (text.includes('beaver')) return '🦫';
-  if (text.includes('coffee')) return '☕';
-  if (text.includes('shirt') || text.includes('tee')) return '👕';
-  if (text.includes('sticker')) return '🏷️';
-  if (text.includes('gift')) return '🎁';
-  return '✨';
+function inferTemplate(text: string, index: number): Template {
+  const value = text.toLowerCase();
+  if (value.includes('shirt') || value.includes('tee')) return 'shirt';
+  if (value.includes('gift') || value.includes('mug')) return 'gift';
+  if (value.includes('quote') || value.includes('sarcastic') || value.includes('funny')) return 'quote';
+  if (value.includes('sticker')) return 'sticker';
+  const templates: Template[] = ['sticker', 'shirt', 'gift', 'quote'];
+  return templates[Math.abs(index) % templates.length];
+}
+
+function emojiFor(text: string) {
+  const value = text.toLowerCase();
+  if (value.includes('raccoon')) return '🦝';
+  if (value.includes('frog')) return '🐸';
+  if (value.includes('goose')) return '🪿';
+  if (value.includes('otter')) return '🦦';
+  if (value.includes('beaver')) return '🦫';
+  if (value.includes('coffee')) return '☕';
+  if (value.includes('mug')) return '☕';
+  if (value.includes('shirt') || value.includes('tee')) return '👕';
+  if (value.includes('gift')) return '🎁';
+  return '🏷️';
 }
 
 function themeFor(index: number) {
   const themes = [
-    { bg: '#141414', card: '#fff5e6', ink: '#fff7ed', accent: '#f97316', shadow: 'rgba(249,115,22,0.35)' },
-    { bg: '#3b1d2f', card: '#fff1f2', ink: '#fff7ed', accent: '#fb7185', shadow: 'rgba(251,113,133,0.35)' },
-    { bg: '#1f2937', card: '#ecfccb', ink: '#f8fafc', accent: '#84cc16', shadow: 'rgba(132,204,22,0.35)' },
-    { bg: '#172554', card: '#dbeafe', ink: '#eff6ff', accent: '#60a5fa', shadow: 'rgba(96,165,250,0.35)' },
+    { bg: '#fff7ed', ink: '#171717', accent: '#ea580c', alt: '#111827', soft: '#fed7aa' },
+    { bg: '#fdf2f8', ink: '#3b0764', accent: '#db2777', alt: '#4a044e', soft: '#fbcfe8' },
+    { bg: '#ecfccb', ink: '#1a2e05', accent: '#65a30d', alt: '#365314', soft: '#bef264' },
+    { bg: '#eff6ff', ink: '#172554', accent: '#2563eb', alt: '#1e3a8a', soft: '#bfdbfe' },
   ];
   return themes[Math.abs(index) % themes.length];
+}
+
+function strongerHeadline(pin: any, product: any) {
+  const raw = cleanText(pin?.title || product.title, 'Funny Redbubble Find');
+  return raw
+    .replace(/\bRedbubble\b/gi, '')
+    .replace(/\bUnique\b/gi, '')
+    .replace(/\bStylish\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || raw;
+}
+
+function subhead(pin: any, product: any, template: Template) {
+  const desc = cleanText(pin?.description || product.description || '', 'Save this funny design for your next gift idea.');
+  if (template === 'sticker') return 'Sticker idea for laptops, water bottles, notebooks, and chaotic little gifts.';
+  if (template === 'shirt') return 'Graphic tee idea for people with humor, attitude, and questionable patience.';
+  if (template === 'gift') return 'Easy gift idea for friends who love funny, weird, oddly specific finds.';
+  return desc.length > 92 ? `${desc.slice(0, 89).trim()}...` : desc;
+}
+
+function StickerMockup({ emoji, theme, hasImage, imageUrl }: any) {
+  return (
+    <div style={{ display: 'flex', width: 430, height: 430, alignItems: 'center', justifyContent: 'center', transform: 'rotate(-6deg)', filter: 'drop-shadow(0 28px 24px rgba(0,0,0,0.28))' }}>
+      <div style={{ width: 330, height: 330, borderRadius: 54, background: '#fff', border: '18px solid #ffffff', outline: `8px solid ${theme.ink}`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ fontSize: 150 }}>{emoji}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ShirtMockup({ emoji, theme, hasImage, imageUrl }: any) {
+  return (
+    <div style={{ width: 470, height: 390, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', top: 82, left: 22, width: 126, height: 190, background: theme.alt, borderRadius: 42, transform: 'rotate(24deg)' }} />
+      <div style={{ position: 'absolute', top: 82, right: 22, width: 126, height: 190, background: theme.alt, borderRadius: 42, transform: 'rotate(-24deg)' }} />
+      <div style={{ width: 280, height: 340, background: theme.alt, borderRadius: '48px 48px 34px 34px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 28px 45px rgba(0,0,0,0.28)', overflow: 'hidden' }}>
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" style={{ width: 190, height: 190, objectFit: 'cover', borderRadius: 24 }} />
+        ) : (
+          <div style={{ fontSize: 112 }}>{emoji}</div>
+        )}
+      </div>
+      <div style={{ position: 'absolute', top: 42, width: 120, height: 58, borderRadius: '0 0 60px 60px', background: theme.bg }} />
+    </div>
+  );
+}
+
+function GiftMockup({ emoji, theme, hasImage, imageUrl }: any) {
+  return (
+    <div style={{ width: 430, height: 430, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+      <div style={{ position: 'absolute', width: 380, height: 300, borderRadius: 38, background: '#fff', boxShadow: '0 28px 50px rgba(0,0,0,0.26)', transform: 'rotate(4deg)' }} />
+      <div style={{ position: 'absolute', width: 340, height: 260, borderRadius: 32, background: theme.soft, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(-4deg)', border: `8px solid ${theme.ink}` }}>
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" style={{ width: 220, height: 220, objectFit: 'cover', borderRadius: 28 }} />
+        ) : (
+          <div style={{ fontSize: 134 }}>{emoji}</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
@@ -74,23 +152,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   `;
 
   if (!product || !Number.isFinite(index)) {
-    return new ImageResponse(
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', color: '#fff', fontSize: 48, fontWeight: 800 }}>
-        Pin not found
-      </div>,
-      { width: 1000, height: 1500 }
-    );
+    return new ImageResponse(<div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', color: '#fff', fontSize: 48, fontWeight: 900 }}>Pin not found</div>, { width: 1000, height: 1500 });
   }
 
   const pin = getPin(product.pinterest_meta, index);
-  const title = shortText(pin?.title || product.title, 'Funny gift idea', 70);
-  const productTitle = shortText(product.title, 'InkWanderStudio find', 60);
-  const description = shortText(pin?.description || product.description, 'Save this Redbubble find for later.', 115);
-  const titleLines = splitTitle(title);
-  const badge = cleanText(pin?.angle || 'find').toUpperCase();
-  const hasImage = Boolean(product.image_url);
+  const fullText = `${pin?.title || ''} ${pin?.description || ''} ${product.title || ''} ${product.description || ''}`;
+  const template = inferTemplate(fullText, index);
   const theme = themeFor(index);
-  const emoji = emojiFor(`${title} ${productTitle} ${description}`);
+  const emoji = emojiFor(fullText);
+  const headline = strongerHeadline(pin, product);
+  const lines = splitTitle(headline, template === 'quote' ? 10 : 12, 5);
+  const caption = subhead(pin, product, template);
+  const hasImage = Boolean(product.image_url);
+  const imageUrl = product.image_url;
+  const eyebrow = template === 'quote' ? 'RELATABLE FIND' : template === 'shirt' ? 'GRAPHIC TEE IDEA' : template === 'gift' ? 'FUNNY GIFT IDEA' : 'STICKER IDEA';
+
+  const ProductVisual = template === 'shirt' ? ShirtMockup : template === 'gift' ? GiftMockup : StickerMockup;
 
   return new ImageResponse(
     <div style={{
@@ -101,82 +178,54 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
       background: theme.bg,
       color: theme.ink,
       fontFamily: 'Arial, Helvetica, sans-serif',
-      padding: 56,
+      padding: 54,
       position: 'relative',
       overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at 18% 16%, ${theme.accent} 0, transparent 28%), radial-gradient(circle at 85% 78%, ${theme.accent} 0, transparent 30%)`, opacity: 0.28 }} />
-      <div style={{ position: 'absolute', top: 120, left: -80, transform: 'rotate(-12deg)', fontSize: 180, fontWeight: 1000, color: 'rgba(255,255,255,0.06)' }}>SAVE THIS</div>
-      <div style={{ position: 'absolute', bottom: 190, right: -90, transform: 'rotate(12deg)', fontSize: 150, fontWeight: 1000, color: 'rgba(255,255,255,0.06)' }}>GIFT IDEA</div>
+      <div style={{ position: 'absolute', top: -80, right: -120, width: 420, height: 420, borderRadius: 999, background: theme.soft, opacity: 0.9 }} />
+      <div style={{ position: 'absolute', bottom: -120, left: -140, width: 520, height: 520, borderRadius: 999, background: theme.soft, opacity: 0.7 }} />
+      <div style={{ position: 'absolute', top: 230, left: -46, right: -46, height: 88, background: theme.accent, transform: 'rotate(-7deg)', opacity: 0.95 }} />
+      <div style={{ position: 'absolute', top: 328, left: -46, right: -46, height: 40, background: theme.ink, transform: 'rotate(-7deg)', opacity: 0.12 }} />
 
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 28, fontWeight: 1000, letterSpacing: 5 }}>INKWANDERSTUDIO</div>
-        <div style={{ padding: '14px 22px', borderRadius: 999, background: theme.accent, color: '#111827', fontSize: 24, fontWeight: 1000, letterSpacing: 2 }}>{badge}</div>
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 28, fontWeight: 1000, letterSpacing: 3 }}>INKWANDERSTUDIO</div>
+        <div style={{ fontSize: 26, fontWeight: 1000, background: theme.ink, color: theme.bg, borderRadius: 999, padding: '15px 22px' }}>{template.toUpperCase()}</div>
       </div>
 
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1, gap: 44 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 26 }}>
-          <div style={{ fontSize: 112, lineHeight: 1 }}>{emoji}</div>
-          <div style={{ fontSize: 34, fontWeight: 1000, letterSpacing: 2, color: theme.accent, textTransform: 'uppercase' }}>Funny Redbubble Find</div>
-        </div>
+      <div style={{ position: 'relative', zIndex: 2, marginTop: 80, display: 'flex', alignItems: 'center', gap: 28 }}>
+        <div style={{ width: 82, height: 82, borderRadius: 26, background: '#fff', border: `7px solid ${theme.ink}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44, transform: 'rotate(-8deg)' }}>{emoji}</div>
+        <div style={{ fontSize: 34, fontWeight: 1000, letterSpacing: 2, color: theme.ink }}>{eyebrow}</div>
+      </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {titleLines.map((line, lineIndex) => (
-            <div key={`${line}-${lineIndex}`} style={{ fontSize: titleLines.length > 4 ? 90 : 108, lineHeight: 0.88, fontWeight: 1000, letterSpacing: -4, textTransform: 'uppercase' }}>
-              {line}
-            </div>
-          ))}
-        </div>
-
-        <div style={{
-          display: 'flex',
-          gap: 34,
-          alignItems: 'center',
-          background: theme.card,
-          color: '#111827',
-          borderRadius: 46,
-          padding: 34,
-          boxShadow: `0 30px 80px ${theme.shadow}`,
-          border: '8px solid rgba(255,255,255,0.4)',
-        }}>
-          <div style={{
-            width: 300,
-            height: 300,
-            borderRadius: 40,
-            background: '#ffffff',
-            border: '8px solid rgba(17,24,39,0.10)',
-            boxShadow: '0 22px 55px rgba(17,24,39,0.20)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', gap: 2, marginTop: 54 }}>
+        {lines.map((line, lineIndex) => (
+          <div key={`${line}-${lineIndex}`} style={{
+            fontSize: lines.length >= 5 ? 88 : 104,
+            lineHeight: 0.9,
+            fontWeight: 1000,
+            letterSpacing: -3,
+            textTransform: 'uppercase',
+            textShadow: `6px 6px 0 ${theme.soft}`,
           }}>
-            {hasImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                <div style={{ fontSize: 110 }}>{emoji}</div>
-                <div style={{ fontSize: 26, fontWeight: 1000, letterSpacing: 1 }}>RED BUBBLE</div>
-              </div>
-            )}
+            {line}
           </div>
-
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ fontSize: 38, lineHeight: 1.05, fontWeight: 1000 }}>{description}</div>
-            <div style={{ fontSize: 24, opacity: 0.72, fontWeight: 900 }}>Shirts · Stickers · Mugs · Gifts</div>
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 28, fontWeight: 1000 }}>{productTitle}</div>
-        <div style={{ background: '#fff', color: '#111827', borderRadius: 999, padding: '16px 24px', fontSize: 28, fontWeight: 1000 }}>SAVE FOR LATER</div>
+      <div style={{ position: 'relative', zIndex: 2, marginTop: 'auto', marginBottom: 28, display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+          <ProductVisual emoji={emoji} theme={theme} hasImage={hasImage} imageUrl={imageUrl} />
+          <div style={{ flex: 1, background: '#fff', border: `8px solid ${theme.ink}`, borderRadius: 38, padding: 28, transform: 'rotate(2deg)', boxShadow: '0 24px 0 rgba(0,0,0,0.16)' }}>
+            <div style={{ fontSize: 34, lineHeight: 1.05, fontWeight: 1000 }}>{caption}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 1000 }}>{titleCase(cleanText(product.title, 'InkWanderStudio'))}</div>
+          <div style={{ fontSize: 30, fontWeight: 1000, color: '#fff', background: theme.accent, border: `6px solid ${theme.ink}`, borderRadius: 999, padding: '16px 24px', boxShadow: '0 10px 0 rgba(0,0,0,0.18)' }}>SAVE THIS</div>
+        </div>
       </div>
     </div>,
-    {
-      width: 1000,
-      height: 1500,
-    }
+    { width: 1000, height: 1500 }
   );
 }
