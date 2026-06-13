@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { attachProductPinUrls, generateProductPinterestPins, normalizeProductPinterestMeta } from '@/lib/productPinterest';
@@ -80,6 +81,14 @@ function getPins(product: any) {
   return Array.isArray(meta.pins) ? meta.pins : [];
 }
 
+async function getSiteUrl() {
+  const headerStore = await headers();
+  const host = headerStore.get('x-forwarded-host') || headerStore.get('host');
+  const proto = headerStore.get('x-forwarded-proto') || 'https';
+  if (host) return `${proto}://${host}`.replace(/\/$/, '');
+  return (process.env.NEXT_PUBLIC_SITE_URL || 'https://hustlepathdaily.com').replace(/\/$/, '');
+}
+
 export default async function ProductPinsPage() {
   let products: any[] = [];
   let error = '';
@@ -95,7 +104,7 @@ export default async function ProductPinsPage() {
     error = err.message || 'Unable to load product pins.';
   }
 
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://hustlepathdaily.com').replace(/\/$/, '');
+  const siteUrl = await getSiteUrl();
   const totals = products.reduce((acc, product) => {
     const pins = getPins(product);
     acc.total += pins.length;
