@@ -11,22 +11,64 @@ const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStud
 const IMAGE_CHECK_TIMEOUT_MS = 7000;
 const IMAGE_URL_RE = /\.(png|jpe?g|webp)(\?|$)/i;
 const BROWSER_IMPORT_SNIPPET = `(() => {
+  const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
+
+  const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
   const anchors = Array.from(document.querySelectorAll('a[href*="/i/"]'));
-  const products = anchors.map((a) => {
-    const href = a.href;
-    const card = a.closest('article, li, div') || a;
-    const img = card.querySelector('img[src]') || a.querySelector('img[src]') || card.querySelector('source[srcset]');
-    let imageUrl = '';
-    if (img) {
-      imageUrl = img.getAttribute('src') || img.getAttribute('srcset')?.split(',')[0]?.trim()?.split(' ')[0] || '';
-    }
-    const title = a.getAttribute('aria-label') || img?.getAttribute('alt') || a.textContent?.trim() || '';
-    return { title: title.trim(), product_url: href, image_url: imageUrl.startsWith('//') ? \`https:\${imageUrl}\` : imageUrl, product_type: '', niche: '', tags: '', source_shop: shopName };
-  }).filter((item) => item.title && item.product_url.includes('/i/') && item.image_url && item.image_url.startsWith('http'));
-  const unique = Array.from(new Map(products.map((item) => [item.product_url, item])).values());
-  copy(JSON.stringify(unique, null, 2));
-  alert(\`Copied \${unique.length} Redbubble products to clipboard.\`);
+
+  const captured = anchors
+    .map((a) => {
+      const href = a.href;
+      const card = a.closest('article, li, div') || a;
+      const img =
+        card.querySelector('img[src]') ||
+        a.querySelector('img[src]') ||
+        card.querySelector('source[srcset]');
+
+      let imageUrl = '';
+      if (img) {
+        imageUrl =
+          img.getAttribute('src') ||
+          img.getAttribute('srcset')?.split(',')[0]?.trim()?.split(' ')[0] ||
+          '';
+      }
+
+      const title =
+        a.getAttribute('aria-label') ||
+        img?.getAttribute('alt') ||
+        a.textContent?.trim() ||
+        '';
+
+      return {
+        title: title.trim(),
+        product_url: href,
+        image_url: imageUrl.startsWith('//') ? 'https:' + imageUrl : imageUrl,
+        product_type: '',
+        niche: '',
+        tags: '',
+        source_shop: shopName,
+      };
+    })
+    .filter((item) =>
+      item.title &&
+      item.product_url.includes('/i/') &&
+      item.image_url &&
+      item.image_url.startsWith('http')
+    );
+
+  const merged = Array.from(
+    new Map([...existing, ...captured].map((item) => [item.product_url, item])).values()
+  );
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  copy(JSON.stringify(merged, null, 2));
+
+  alert('Captured ' + captured.length + ' products on this page. Total saved: ' + merged.length + '. Full JSON copied to clipboard.');
+})();`;
+const BROWSER_CLEAR_SNIPPET = `(() => {
+  localStorage.removeItem('hpd_redbubble_products');
+  alert('Cleared captured Redbubble products.');
 })();`;
 
 function flashRedirect(message: string) {
@@ -88,9 +130,47 @@ function parseCsvRows(csv: string) {
   });
 }
 
+function splitJsonValues(input: string) {
+  const chunks: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '[' || char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === ']' || char === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        chunks.push(input.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return chunks;
+}
+
 function parseBrowserJsonRows(json: string) {
-  const parsed = JSON.parse(json);
-  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  const chunks = splitJsonValues(json);
+  const values = chunks.length ? chunks.map((chunk) => JSON.parse(chunk)) : [JSON.parse(json)];
+  const rows = values.flatMap((value) => Array.isArray(value) ? value : [value]);
   return rows.filter((row) => row && typeof row === 'object') as Record<string, unknown>[];
 }
 
@@ -393,16 +473,26 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
         </form>
 
         <div className="product-form admin-section">
-          <h2>Browser-assisted JSON capture</h2>
-          <p className="admin-muted">Open the InkWanderStudio shop, paste this snippet into the browser console, then paste the copied JSON into Browser JSON import below.</p>
+          <h2>Browser-assisted paginated capture</h2>
+          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet stores products in Redbubble localStorage, merges each shop page you scan, skips duplicate product URLs, and copies the full accumulated JSON every time.</p>
+          <ol className="admin-muted">
+            <li>Open Redbubble shop page 1.</li>
+            <li>Run the capture products snippet in the browser console.</li>
+            <li>Click the next shop page.</li>
+            <li>Run the capture snippet again.</li>
+            <li>Repeat until all pages are captured.</li>
+            <li>Paste the final copied JSON into HustlePathDaily below.</li>
+          </ol>
           <a href="https://www.redbubble.com/people/InkWanderStudio/shop" target="_blank" rel="noopener noreferrer" className="secondary-link small">Open InkWanderStudio shop</a>
-          <label className="field"><span>Console snippet</span><textarea readOnly rows={10} value={BROWSER_IMPORT_SNIPPET} /></label>
+          <label className="field"><span>Capture products snippet</span><textarea readOnly rows={22} value={BROWSER_IMPORT_SNIPPET} /></label>
+          <p className="admin-muted">Run this clear snippet in the Redbubble browser console when you want to start a fresh capture.</p>
+          <label className="field"><span>Clear captured Redbubble products</span><textarea readOnly rows={4} value={BROWSER_CLEAR_SNIPPET} /></label>
         </div>
 
         <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
           <h2>Browser JSON import</h2>
-          <p className="admin-muted">Paste the JSON array copied by the browser snippet. Rows are validated, duplicate product URLs are skipped, and valid rows become Ready products.</p>
-          <label className="field"><span>Browser JSON</span><textarea name="browser_json" rows={8} placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]'} /></label>
+          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. You can also paste multiple JSON arrays one after another; rows are validated, duplicate product URLs are skipped, and valid rows become Ready products.</p>
+          <label className="field"><span>Browser JSON</span><textarea name="browser_json" rows={8} placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]\n[{\n  "title": "Another Captured Design",\n  "product_url": "https://www.redbubble.com/i/t-shirt/...",\n  "image_url": "https://ih1.redbubble.net/image..."\n}]'} /></label>
           <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
 
