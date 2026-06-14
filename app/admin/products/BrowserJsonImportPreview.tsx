@@ -17,16 +17,19 @@ function hasBadTitle(value: unknown) {
 function imageRejectReason(value: unknown) {
   const imageUrl = cleanText(value).toLowerCase();
   if (!imageUrl) return 'Missing image URL';
+  if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) return 'Image URL is not a valid absolute URL';
   if (imageUrl.includes('/boom/client/')) return 'Internal Redbubble UI asset (/boom/client/)';
   if (imageUrl.includes('.svg')) return 'SVG asset instead of product image';
   if (imageUrl.includes('/avatar') || imageUrl.includes('avatar.')) return 'Avatar image instead of product image';
-  if (/logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return 'UI asset, icon, logo, or placeholder';
+  if (imageUrl.includes('logo') || imageUrl.includes('icon') || imageUrl.includes('heart') || imageUrl.includes('favorite') || imageUrl.includes('placeholder') || imageUrl.includes('sprite')) {
+    return 'UI asset, icon, logo, or placeholder';
+  }
   try {
     const url = new URL(imageUrl);
-    const isRbcdn = url.hostname.includes('rbcdn');
-    const isRedbubbleNet = url.hostname.includes('redbubble.net');
-    if (!isRbcdn && !isRedbubbleNet) return 'Image host must be rbcdn or redbubble.net';
-    if (!url.pathname.includes('/image')) return 'Image path must contain /image';
+    const host = url.hostname.toLowerCase();
+    if (!host.includes('rbcdn') && !host.includes('redbubble.net') && !host.includes('redbubble.com')) {
+      return 'Image host must be redbubble.com, redbubble.net, or rbcdn';
+    }
     return '';
   } catch {
     return 'Image URL is not a valid absolute URL';
