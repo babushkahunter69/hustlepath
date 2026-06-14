@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { attachProductPinUrls, generateProductPinterestPins, normalizeProductPinterestMeta } from '@/lib/productPinterest';
 import { parseKeywords } from '@/lib/monetization';
-import { validateProductSource } from '@/lib/redbubbleProductSource';
+import { sanitizeImportedProductTitle, validateProductSource } from '@/lib/redbubbleProductSource';
 import ProductPinPreviewImage from './ProductPinPreviewImage';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +31,8 @@ async function productPinsAction(formData: FormData) {
 
   if (!product) redirect('/admin/product-pins');
 
+  const safeTitle = sanitizeImportedProductTitle(product.title, product.target_url || '');
+
   if (intent === 'generate_pins') {
     const validation = validateProductSource(product);
     if (validation.status !== 'ready') {
@@ -46,12 +48,12 @@ async function productPinsAction(formData: FormData) {
             updated_at = now()
         where id = ${product.id}
       `;
-      flashRedirect(`${product.title || 'Product'} is ${validation.label.toLowerCase()}: ${validation.reason}`);
+      flashRedirect(`${safeTitle || 'Product'} is ${validation.label.toLowerCase()}: ${validation.reason}`);
     }
 
     const pins = await generateProductPinterestPins({
       id: String(product.id),
-      title: String(product.title || ''),
+      title: safeTitle,
       description: product.description || '',
       image_url: product.image_url || '',
       target_url: String(product.target_url || ''),
@@ -205,13 +207,14 @@ export default async function ProductPinsPage({ searchParams }: { searchParams?:
             const canGenerate = validation.status === 'ready';
             const draftCount = pins.filter((pin: any) => pin.status !== 'posted').length;
             const postedCount = pins.filter((pin: any) => pin.status === 'posted').length;
+            const safeTitle = sanitizeImportedProductTitle(product.title, product.target_url || '');
 
             return (
               <article key={product.id} className="pin-workflow-post">
                 <div className="pin-workflow-post-head">
                   <div>
                     <p className="eyebrow">{product.source || 'redbubble'} · {product.status || 'active'}</p>
-                    <h2>{product.title || 'Untitled product'}</h2>
+                    <h2>{safeTitle || 'Untitled product'}</h2>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, borderRadius: 999, padding: '8px 12px', fontWeight: 800, ...statusStyles(validation.status) }}>
                       {validation.label}
                     </div>
