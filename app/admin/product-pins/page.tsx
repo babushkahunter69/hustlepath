@@ -87,21 +87,31 @@ function normalizeSiteUrl(value?: string | null) {
   return /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
 }
 
-async function getSiteUrls() {
+async function getCanonicalSiteUrl() {
   const headerStore = await headers();
   const host = headerStore.get('x-forwarded-host') || headerStore.get('host');
   const proto = headerStore.get('x-forwarded-proto') || (host?.includes('localhost') ? 'http' : 'https');
   const runtimeUrl = host ? `${proto}://${host}`.replace(/\/$/, '') : '';
-  const publicUrl =
+
+  return (
     normalizeSiteUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
     normalizeSiteUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
     runtimeUrl ||
-    'https://hustlepathdaily.com';
+    'https://hustlepathdaily.com'
+  );
+}
 
-  return {
-    runtimeUrl: runtimeUrl || publicUrl,
-    publicUrl,
-  };
+function shortPreviewText(value: unknown, maxLength = 170) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  const words = text.split(' ');
+  const output: string[] = [];
+  for (const word of words) {
+    const next = [...output, word].join(' ');
+    if (next.length > maxLength) break;
+    output.push(word);
+  }
+  return `${output.join(' ').replace(/[,.!?;:]$/, '')}...`;
 }
 
 export default async function ProductPinsPage() {
@@ -119,7 +129,7 @@ export default async function ProductPinsPage() {
     error = err.message || 'Unable to load product pins.';
   }
 
-  const { runtimeUrl, publicUrl } = await getSiteUrls();
+  const canonicalSiteUrl = await getCanonicalSiteUrl();
   const totals = products.reduce((acc, product) => {
     const pins = getPins(product);
     acc.total += pins.length;
@@ -136,7 +146,7 @@ export default async function ProductPinsPage() {
             <div className="admin-topline">Redbubble Pinterest workflow</div>
             <h1>Product pin command center</h1>
             <p className="admin-muted">
-              Generate Pinterest-ready campaigns for Redbubble products, preview the exact image output, copy tracked links, and open the Pinterest pin builder with public-safe URLs.
+              Generate Pinterest-ready campaigns for Redbubble products, preview the exact image output, copy tracked links, and open the Pinterest pin builder with the same image route.
             </p>
           </div>
           <Link href="/admin" className="secondary-link small">Dashboard</Link>
@@ -145,7 +155,7 @@ export default async function ProductPinsPage() {
         {error && <div className="notice">Database not ready: {error}</div>}
 
         <div className="notice">
-          Preview images open against the current environment. Pinterest builder links use the public site URL so the media URL stays reachable outside preview sessions.
+          Open image and Open Pinterest now use the same canonical product pin image URL, so the admin preview matches what gets pinned.
         </div>
 
         <div className="stat-grid three">
@@ -198,11 +208,10 @@ export default async function ProductPinsPage() {
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
-                      const previewImageUrl = new URL(imagePath, runtimeUrl).toString();
-                      const publicImageUrl = new URL(imagePath, publicUrl).toString();
-                      const trackedUrl = trackedPath.startsWith('http') ? trackedPath : new URL(trackedPath, publicUrl).toString();
-                      const pinterestDescription = [pin.title, pin.description].filter(Boolean).join(' - ');
-                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(publicImageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
+                      const imageUrl = new URL(imagePath, canonicalSiteUrl).toString();
+                      const trackedUrl = trackedPath.startsWith('http') ? trackedPath : new URL(trackedPath, canonicalSiteUrl).toString();
+                      const pinterestDescription = [pin.title, shortPreviewText(pin.description, 320)].filter(Boolean).join(' - ');
+                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
                       const posted = pin.status === 'posted';
                       const focusTags = Array.isArray(pin.keyword_focus) ? pin.keyword_focus.slice(0, 3) : [];
 
@@ -211,22 +220,21 @@ export default async function ProductPinsPage() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={previewImageUrl}
+                              src={imageUrl}
                               alt={pin.title || `Pin ${index + 1}`}
                               loading="lazy"
-                              style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 18, border: '1px solid rgba(15, 23, 42, 0.1)', background: '#f8fafc' }}
+                              style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(15, 23, 42, 0.1)', background: '#f8fafc' }}
                             />
                             <span>{pin.angle || 'pin'} · {posted ? 'posted' : 'draft'}</span>
                           </div>
-                          <strong>{pin.title}</strong>
-                          <p>{pin.description}</p>
+                          <strong style={{ display: 'block', overflow: 'hidden' }}>{pin.title}</strong>
+                          <p>{shortPreviewText(pin.description)}</p>
 
                           {pin.niche && <p className="admin-muted">Niche: {pin.niche}</p>}
                           {focusTags.length > 0 && <p className="admin-muted">Keywords: {focusTags.join(', ')}</p>}
 
                           <div className="pin-tools">
-                            <a href={previewImageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
-                            <a href={publicImageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open public image URL</a>
+                            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
                             <a href={trackedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
                             <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">Open Pinterest</a>
                           </div>
@@ -237,8 +245,8 @@ export default async function ProductPinsPage() {
                           </div>
 
                           <div className="tracked-url-box">
-                            <small>Image URL for Pinterest</small>
-                            <code>{publicImageUrl}</code>
+                            <small>Image URL used by preview and Pinterest</small>
+                            <code>{imageUrl}</code>
                           </div>
 
                           <form action={productPinsAction} className="pin-status-form">
@@ -253,7 +261,7 @@ export default async function ProductPinsPage() {
 
                           <details>
                             <summary>Creative direction</summary>
-                            <p>This pin now carries design-specific niche and keyword metadata so future image generation can stay tied to the real Redbubble product.</p>
+                            <p>This pin carries design-specific niche and keyword metadata so future image generation can stay tied to the real Redbubble product.</p>
                             <p>{pin.image_prompt}</p>
                           </details>
                         </div>
