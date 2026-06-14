@@ -81,12 +81,27 @@ function getPins(product: any) {
   return Array.isArray(meta.pins) ? meta.pins : [];
 }
 
-async function getSiteUrl() {
+function normalizeSiteUrl(value?: string | null) {
+  const cleaned = String(value || '').trim().replace(/\/$/, '');
+  if (!cleaned) return '';
+  return /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
+}
+
+async function getSiteUrls() {
   const headerStore = await headers();
   const host = headerStore.get('x-forwarded-host') || headerStore.get('host');
-  const proto = headerStore.get('x-forwarded-proto') || 'https';
-  if (host) return `${proto}://${host}`.replace(/\/$/, '');
-  return (process.env.NEXT_PUBLIC_SITE_URL || 'https://hustlepathdaily.com').replace(/\/$/, '');
+  const proto = headerStore.get('x-forwarded-proto') || (host?.includes('localhost') ? 'http' : 'https');
+  const runtimeUrl = host ? `${proto}://${host}`.replace(/\/$/, '') : '';
+  const publicUrl =
+    normalizeSiteUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
+    normalizeSiteUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
+    runtimeUrl ||
+    'https://hustlepathdaily.com';
+
+  return {
+    runtimeUrl: runtimeUrl || publicUrl,
+    publicUrl,
+  };
 }
 
 export default async function ProductPinsPage() {
@@ -104,7 +119,7 @@ export default async function ProductPinsPage() {
     error = err.message || 'Unable to load product pins.';
   }
 
-  const siteUrl = await getSiteUrl();
+  const { runtimeUrl, publicUrl } = await getSiteUrls();
   const totals = products.reduce((acc, product) => {
     const pins = getPins(product);
     acc.total += pins.length;
@@ -121,7 +136,7 @@ export default async function ProductPinsPage() {
             <div className="admin-topline">Redbubble Pinterest workflow</div>
             <h1>Product pin command center</h1>
             <p className="admin-muted">
-              Generate Pinterest-ready campaigns for Redbubble products, copy tracked links, and open the Pinterest pin builder.
+              Generate Pinterest-ready campaigns for Redbubble products, preview the exact image output, copy tracked links, and open the Pinterest pin builder with public-safe URLs.
             </p>
           </div>
           <Link href="/admin" className="secondary-link small">Dashboard</Link>
@@ -130,7 +145,7 @@ export default async function ProductPinsPage() {
         {error && <div className="notice">Database not ready: {error}</div>}
 
         <div className="notice">
-          Preview note: Pinterest may not display Vercel preview images inside Pin Builder. If the image opens correctly here, the final production URL should work after merge.
+          Preview images open against the current environment. Pinterest builder links use the public site URL so the media URL stays reachable outside preview sessions.
         </div>
 
         <div className="stat-grid three">
@@ -183,28 +198,47 @@ export default async function ProductPinsPage() {
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
-                      const imageUrl = `${siteUrl}${imagePath}`;
-                      const trackedUrl = trackedPath.startsWith('http') ? trackedPath : `${siteUrl}${trackedPath}`;
+                      const previewImageUrl = new URL(imagePath, runtimeUrl).toString();
+                      const publicImageUrl = new URL(imagePath, publicUrl).toString();
+                      const trackedUrl = trackedPath.startsWith('http') ? trackedPath : new URL(trackedPath, publicUrl).toString();
                       const pinterestDescription = [pin.title, pin.description].filter(Boolean).join(' - ');
-                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
+                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(publicImageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
                       const posted = pin.status === 'posted';
+                      const focusTags = Array.isArray(pin.keyword_focus) ? pin.keyword_focus.slice(0, 3) : [];
 
                       return (
                         <div key={`${product.id}-${index}-${pin.title}`} className={`pin-card admin-pin-card ${posted ? 'posted' : ''}`}>
-                          <span>{pin.angle || 'pin'} · {posted ? 'posted' : 'draft'}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={previewImageUrl}
+                              alt={pin.title || `Pin ${index + 1}`}
+                              loading="lazy"
+                              style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 18, border: '1px solid rgba(15, 23, 42, 0.1)', background: '#f8fafc' }}
+                            />
+                            <span>{pin.angle || 'pin'} · {posted ? 'posted' : 'draft'}</span>
+                          </div>
                           <strong>{pin.title}</strong>
                           <p>{pin.description}</p>
 
+                          {pin.niche && <p className="admin-muted">Niche: {pin.niche}</p>}
+                          {focusTags.length > 0 && <p className="admin-muted">Keywords: {focusTags.join(', ')}</p>}
+
                           <div className="pin-tools">
-                            <a href={imagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
-                            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open public image URL</a>
-                            <a href={trackedPath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
+                            <a href={previewImageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
+                            <a href={publicImageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open public image URL</a>
+                            <a href={trackedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
                             <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">Open Pinterest</a>
                           </div>
 
                           <div className="tracked-url-box">
                             <small>Tracked URL</small>
-                            <code>{trackedPath}</code>
+                            <code>{trackedUrl}</code>
+                          </div>
+
+                          <div className="tracked-url-box">
+                            <small>Image URL for Pinterest</small>
+                            <code>{publicImageUrl}</code>
                           </div>
 
                           <form action={productPinsAction} className="pin-status-form">
@@ -219,7 +253,7 @@ export default async function ProductPinsPage() {
 
                           <details>
                             <summary>Creative direction</summary>
-                            <p>This is generated metadata for future template or AI-image upgrades. The current image uses the pin title, description, and product image only.</p>
+                            <p>This pin now carries design-specific niche and keyword metadata so future image generation can stay tied to the real Redbubble product.</p>
                             <p>{pin.image_prompt}</p>
                           </details>
                         </div>
