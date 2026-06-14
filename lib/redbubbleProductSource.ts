@@ -128,8 +128,13 @@ export function validateProductSource(product: { target_url?: unknown; image_url
   };
 }
 
+function redbubbleBlockedMessage(kind: 'shop' | 'product') {
+  if (kind === 'shop') return 'Redbubble blocked automatic import. Use manual import or CSV import with image URLs.';
+  return 'Redbubble blocked automatic extraction. Paste the product image URL manually.';
+}
+
 function metaContent(html: string, key: string, attr = 'property') {
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedKey = key.replaceAll(':', '\\:');
   const direct = new RegExp(`<meta[^>]+${attr}=["']${escapedKey}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
   const reverse = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+${attr}=["']${escapedKey}["'][^>]*>`, 'i');
   return decodeHtml(html.match(direct)?.[1] || html.match(reverse)?.[1] || '');
@@ -286,7 +291,7 @@ export async function importRedbubbleProduct(productUrl: string, sourceShopName 
         productType: '',
         tags: [],
         sourceShopName,
-        error: `Redbubble returned HTTP ${response.status}.`,
+        error: response.status === 403 ? redbubbleBlockedMessage('product') : `Redbubble returned HTTP ${response.status}.`,
       };
     }
 
@@ -348,7 +353,7 @@ export async function importRedbubbleShopProducts(shopUrl = DEFAULT_SHOP_URL): P
         shopName,
         discoveredUrls: [],
         products: [],
-        errors: [`Redbubble shop returned HTTP ${response.status}.`],
+        errors: [response.status === 403 ? redbubbleBlockedMessage('shop') : `Redbubble shop returned HTTP ${response.status}.`],
       };
     }
 
