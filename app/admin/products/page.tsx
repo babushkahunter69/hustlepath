@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import BrowserJsonImportPreview from './BrowserJsonImportPreview';
 import { sql } from '@/lib/db';
 import { parseKeywords } from '@/lib/monetization';
 import { importRedbubbleProduct, importRedbubbleShopProducts, isRedbubbleProductUrl, validateProductSource } from '@/lib/redbubbleProductSource';
@@ -10,59 +11,93 @@ export const revalidate = 0;
 const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
 const BROWSER_IMAGE_WARNING_KEYWORD = 'image_server_check:failed';
 const BROWSER_IMAGE_WARNING = 'Image may not be server-fetchable, but was captured from browser.';
+const BAD_BROWSER_TITLES = new Set(['favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio']);
+const PRODUCT_IMAGE_URL_RE = /^https?:\/\/(?:ih\d?\.redbubble\.net|[^/]+\.redbubble\.net)\/.*\.(?:png|jpe?g|webp)(?:[?#].*)?$/i;
+const NON_PRODUCT_IMAGE_RE = /avatar|logo|icon|heart|favorite|placeholder|sprite/i;
 const BROWSER_IMPORT_SNIPPET = `(() => {
   const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
+  const BAD_LABELS = new Set(['favorite', 'add to favorites', 'add to cart', 'cart']);
+  const PRODUCT_IMAGE_RE = /^https?:\/\/(?:ih\d?\.redbubble\.net|[^/]+\.redbubble\.net)\/.*\.(?:png|jpe?g|webp)(?:[?#].*)?$/i;
+  const NON_PRODUCT_IMAGE_RE = /avatar|logo|icon|heart|favorite|placeholder|sprite/i;
 
+  const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const normalizeUrl = (value) => {
-    const url = String(value || '').trim();
+    const url = clean(value);
     if (!url) return '';
     if (url.startsWith('//')) return 'https:' + url;
     if (url.startsWith('/')) return new URL(url, location.origin).href;
     return url;
   };
+  const firstSrcsetUrl = (srcset) => clean(srcset).split(',')[0]?.trim()?.split(/\s+/)[0] || '';
+  const isBadLabel = (value) => BAD_LABELS.has(clean(value).toLowerCase());
+  const isProductImage = (url) => PRODUCT_IMAGE_RE.test(url) && !NON_PRODUCT_IMAGE_RE.test(url);
+  const isProductLink = (link) => {
+    if (!link) return false;
+    if (isBadLabel(link.getAttribute('aria-label')) || isBadLabel(link.getAttribute('title')) || isBadLabel(link.textContent)) return false;
+    try {
+      const url = new URL(normalizeUrl(link.getAttribute('href') || link.href), location.origin);
+      return /(^|\.)redbubble\.com$/i.test(url.hostname) && url.pathname.split('/').includes('i');
+    } catch {
+      return false;
+    }
+  };
+  const titleFromUrl = (productUrl) => {
+    try {
+      const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      const index = parts.indexOf('i');
+      const slug = parts[index + 2] || parts.find((part) => part.includes('-by-')) || '';
+      return clean(slug.replace(/-by-.+$/i, '').replace(/-/g, ' ')).replace(/\b\w/g, (char) => char.toUpperCase());
+    } catch {
+      return '';
+    }
+  };
+  const visibleTitle = (card, productUrl, imageAlt) => {
+    const ignored = /^(favorite|add to favorites|add to cart|cart|redbubble|inkwanderstudio)$/i;
+    const nodes = Array.from(card.querySelectorAll('h1,h2,h3,[data-testid],a,span,p,div'));
+    const texts = nodes
+      .map((node) => clean(node.textContent))
+      .filter((text) => text && text.length > 2 && text.length < 120)
+      .filter((text) => !ignored.test(text))
+      .filter((text) => !/^\$?\d+(\.\d{2})?$/.test(text))
+      .filter((text) => !/^by\s+/i.test(text));
+    const fromUrl = titleFromUrl(productUrl);
+    const matching = texts.find((text) => fromUrl && text.toLowerCase().includes(fromUrl.split(' ')[0].toLowerCase()));
+    return matching || texts[0] || (!ignored.test(clean(imageAlt)) ? clean(imageAlt) : '') || fromUrl;
+  };
 
-  const firstSrcsetUrl = (srcset) => String(srcset || '').split(',')[0]?.trim()?.split(/\\s+/)[0] || '';
   const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  const anchors = Array.from(document.querySelectorAll('a[href]')).filter((a) => a.href.includes('/i/'));
+  const media = Array.from(document.querySelectorAll('img, source'));
 
-  const captured = anchors
-    .map((a) => {
-      const href = normalizeUrl(a.getAttribute('href') || a.href);
-      const card = a.closest('[data-testid], article, li, div') || a;
-      const media = Array.from(new Set([
-        ...Array.from(card.querySelectorAll('img, source')),
-        ...Array.from(a.querySelectorAll('img, source')),
-      ]));
+  const captured = media
+    .map((el) => {
+      const candidateUrls = [
+        el.currentSrc,
+        el.getAttribute('src'),
+        el.getAttribute('data-src'),
+        firstSrcsetUrl(el.getAttribute('srcset')),
+        firstSrcsetUrl(el.getAttribute('data-srcset')),
+      ].map(normalizeUrl).filter(Boolean);
+      const imageUrl = candidateUrls.find(isProductImage) || '';
+      if (!imageUrl) return null;
 
-      let imageUrl = '';
-      let altText = '';
-      for (const el of media) {
-        const candidateUrls = [
-          el.currentSrc,
-          el.getAttribute('src'),
-          el.getAttribute('data-src'),
-          firstSrcsetUrl(el.getAttribute('srcset')),
-          firstSrcsetUrl(el.getAttribute('data-srcset')),
-        ].map(normalizeUrl).filter(Boolean);
+      if (el.tagName === 'IMG' && el.naturalWidth && el.naturalHeight && (el.naturalWidth < 120 || el.naturalHeight < 120)) return null;
 
-        imageUrl = candidateUrls.find((url) => url.startsWith('http')) || imageUrl;
-        altText = altText || el.getAttribute('alt') || '';
-        if (imageUrl) break;
-      }
+      const card = el.closest('[data-testid], article, li, div') || el.parentElement || el;
+      const links = Array.from(new Set([
+        el.closest('a[href]'),
+        ...Array.from(card.querySelectorAll('a[href]')),
+      ].filter(Boolean)));
+      const productLink = links.find(isProductLink);
+      if (!productLink) return null;
 
-      const title =
-        a.getAttribute('aria-label') ||
-        card.getAttribute('aria-label') ||
-        a.getAttribute('title') ||
-        altText ||
-        a.textContent?.trim() ||
-        card.textContent?.trim() ||
-        '';
+      const productUrl = normalizeUrl(productLink.getAttribute('href') || productLink.href);
+      const title = visibleTitle(card, productUrl, el.getAttribute('alt'));
+      if (!title || /^(favorite|redbubble|inkwanderstudio)$/i.test(title)) return null;
 
       return {
-        title: title.replace(/\\s+/g, ' ').trim(),
-        product_url: href,
+        title,
+        product_url: productUrl,
         image_url: imageUrl,
         product_type: '',
         niche: '',
@@ -70,23 +105,19 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
         source_shop: shopName,
       };
     })
-    .filter((item) =>
-      item.title &&
-      item.product_url.includes('/i/') &&
-      item.image_url &&
-      item.image_url.startsWith('http')
-    );
+    .filter(Boolean);
 
-  console.table(captured);
+  const uniquePageProducts = Array.from(new Map(captured.map((item) => [item.product_url, item])).values());
+  console.table(uniquePageProducts);
 
   const merged = Array.from(
-    new Map([...existing, ...captured].map((item) => [item.product_url, item])).values()
+    new Map([...existing, ...uniquePageProducts].map((item) => [item.product_url, item])).values()
   );
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   copy(JSON.stringify(merged, null, 2));
 
-  alert('Captured ' + captured.length + ' products on this page. Total saved: ' + merged.length + '. Full JSON copied to clipboard.');
+  alert('Captured ' + uniquePageProducts.length + ' products on this page. Total saved: ' + merged.length + '. Full JSON copied to clipboard.');
 })();`;
 const BROWSER_CLEAR_SNIPPET = `(() => {
   localStorage.removeItem('hpd_redbubble_products');
@@ -110,6 +141,26 @@ function productKey(value: unknown) {
 
 function cleanText(value: unknown) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isBadBrowserTitle(value: unknown) {
+  const title = cleanText(value).toLowerCase();
+  return !title || BAD_BROWSER_TITLES.has(title);
+}
+
+function isSpecificRedbubbleProductUrl(value: unknown) {
+  const url = cleanText(value);
+  if (!isRedbubbleProductUrl(url)) return false;
+  try {
+    return new URL(url).pathname.split('/').includes('i');
+  } catch {
+    return false;
+  }
+}
+
+function isRedbubbleProductImageUrl(value: unknown) {
+  const imageUrl = cleanText(value);
+  return PRODUCT_IMAGE_URL_RE.test(imageUrl) && !NON_PRODUCT_IMAGE_RE.test(imageUrl);
 }
 
 function splitCsvLine(line: string) {
@@ -211,6 +262,26 @@ async function productExists(targetUrl: string) {
   return existing.length > 0;
 }
 
+async function deleteBadImportedProductsAction() {
+  'use server';
+
+  const result = await sql`
+    with deleted as (
+      delete from products
+      where source like 'redbubble:%:browser'
+        and (
+          lower(trim(coalesce(title, ''))) in ('favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio')
+          or coalesce(image_url, '') !~* '^https?://(ih[0-9]?\.redbubble\.net|[^/]+\.redbubble\.net)/.*\.(png|jpe?g|webp)(\?|#|$)'
+          or coalesce(image_url, '') ~* '(avatar|logo|icon|heart|favorite|placeholder|sprite)'
+        )
+      returning id
+    )
+    select count(*)::int as count from deleted
+  `;
+
+  flashRedirect(`Deleted ${result[0]?.count || 0} bad browser-imported products.`);
+}
+
 async function insertManualProduct(input: {
   title: string;
   description?: string;
@@ -245,9 +316,9 @@ async function insertBrowserCapturedProduct(input: {
   tags?: string;
   shopName?: string;
 }) {
-  if (!cleanText(input.title)) return { inserted: false, skipped: true, reason: 'missing title' };
-  if (!isRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
-  if (!/^https?:\/\//i.test(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be an absolute http/https URL' };
+  if (isBadBrowserTitle(input.title)) return { inserted: false, skipped: true, reason: 'bad product title' };
+  if (!isSpecificRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
+  if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a Redbubble product image CDN URL' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
   const shopName = cleanText(input.shopName) || 'InkWanderStudio';
@@ -535,9 +606,15 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <button type="submit" className="primary-link">Import Redbubble products</button>
         </form>
 
+        <form action={deleteBadImportedProductsAction} className="product-form admin-section">
+          <h2>Cleanup bad browser imports</h2>
+          <p className="admin-muted">Use this before re-importing if a previous capture saved favorite buttons, icons, logos, or non-product images.</p>
+          <button type="submit" className="primary-link">Delete bad imported products</button>
+        </form>
+
         <div className="product-form admin-section">
           <h2>Browser-assisted paginated capture</h2>
-          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet stores products in Redbubble localStorage, merges each shop page you scan, skips duplicate product URLs, and copies the full accumulated JSON every time.</p>
+          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet starts from visible product images, finds the nearest real Redbubble product link, ignores favorite/cart controls, and copies the full accumulated JSON every time.</p>
           <ol className="admin-muted">
             <li>Open Redbubble shop page 1.</li>
             <li>Run the capture products snippet in the browser console.</li>
@@ -547,15 +624,15 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
             <li>Paste the final copied JSON into HustlePathDaily below.</li>
           </ol>
           <a href="https://www.redbubble.com/people/InkWanderStudio/shop" target="_blank" rel="noopener noreferrer" className="secondary-link small">Open InkWanderStudio shop</a>
-          <label className="field"><span>Capture products snippet</span><textarea readOnly rows={22} value={BROWSER_IMPORT_SNIPPET} /></label>
+          <label className="field"><span>Capture products snippet</span><textarea readOnly rows={28} value={BROWSER_IMPORT_SNIPPET} /></label>
           <p className="admin-muted">Run this clear snippet in the Redbubble browser console when you want to start a fresh capture.</p>
           <label className="field"><span>Clear captured Redbubble products</span><textarea readOnly rows={4} value={BROWSER_CLEAR_SNIPPET} /></label>
         </div>
 
         <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
           <h2>Browser JSON import</h2>
-          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Browser-captured image URLs are trusted when they are absolute URLs, even if Vercel cannot fetch them during import.</p>
-          <label className="field"><span>Browser JSON</span><textarea name="browser_json" rows={8} placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]\n[{\n  "title": "Another Captured Design",\n  "product_url": "https://www.redbubble.com/i/t-shirt/...",\n  "image_url": "https://ih1.redbubble.net/image..."\n}]'} /></label>
+          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Review the preview table first; rows with bad titles, non-product URLs, or non-Redbubble product images are skipped.</p>
+          <BrowserJsonImportPreview />
           <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
 
