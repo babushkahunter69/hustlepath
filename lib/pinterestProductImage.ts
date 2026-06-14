@@ -230,6 +230,24 @@ function isDirectImageUrl(value: string) {
   return /\.(png|jpe?g|webp)(\?|$)/i.test(value);
 }
 
+export function pinterestProductImageDebugSummary(result: PinterestProductImageResult): PinterestProductImageDebug {
+  return {
+    productId: result.productId,
+    productImageUrl: result.productImageUrl,
+    productImageUrlIsAbsolute: result.productImageUrlIsAbsolute,
+    productTargetUrl: result.productTargetUrl,
+    productTargetUrlIsAbsolute: result.productTargetUrlIsAbsolute,
+    candidates: result.candidates,
+    sourceUrl: result.sourceUrl,
+    status: result.status,
+    httpStatus: result.httpStatus,
+    contentType: result.contentType,
+    byteLength: result.byteLength,
+    hasImage: result.hasImage,
+    reason: result.reason,
+  };
+}
+
 export async function resolvePinterestProductImage(product: any): Promise<PinterestProductImageResult> {
   const explicitImageUrl = cleanText(product?.image_url);
   const targetUrl = cleanText(product?.target_url);
@@ -260,7 +278,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
 
   if (!uniqueCandidates.length) {
     const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', 'image_url-and-target_url-missing-or-not-absolute');
-    console.info('Pinterest product image fallback triggered', result);
+    console.info('Pinterest product image fallback triggered', pinterestProductImageDebugSummary(result));
     return result;
   }
 
@@ -268,7 +286,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
 
   for (const candidate of uniqueCandidates) {
     const result = await fetchImageCandidate(product, uniqueCandidates, candidate);
-    console.info('Pinterest product image candidate result', result);
+    console.info('Pinterest product image candidate result', pinterestProductImageDebugSummary(result));
     if (result.hasImage) return result;
     lastResult = result;
   }
@@ -280,7 +298,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     bytes: null,
     dataUrl: null,
   };
-  console.info('Pinterest product image fallback triggered', fallbackResult);
+  console.info('Pinterest product image fallback triggered', pinterestProductImageDebugSummary(fallbackResult));
   return fallbackResult;
 }
 
