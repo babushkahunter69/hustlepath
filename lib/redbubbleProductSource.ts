@@ -54,6 +54,55 @@ function decodeHtml(value: string) {
     .trim();
 }
 
+export function deriveRedbubbleTitleFromProductUrl(productUrl: string) {
+  try {
+    const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const index = parts.indexOf('i');
+    const slug = parts[index + 2] || parts.find((part) => part.includes('-by-')) || '';
+    return cleanText(slug.replace(/-by-.+$/i, '').replace(/-/g, ' ')).replace(/\b\w/g, (char) => char.toUpperCase());
+  } catch {
+    return '';
+  }
+}
+
+function looksContaminatedTitle(value: string) {
+  const text = value.toLowerCase();
+  return (
+    text.includes('<img')
+    || text.includes('<svg')
+    || text.includes('data-testid=')
+    || text.includes('loading="lazy"')
+    || text.includes('class="favoriteicon_')
+    || text.includes('/frontend-static/_next/static/media/')
+    || text.includes('style="position:absolute')
+  );
+}
+
+export function sanitizeImportedProductTitle(title: unknown, productUrl = '') {
+  const raw = decodeHtml(cleanText(title));
+  const fallbackTitle = deriveRedbubbleTitleFromProductUrl(productUrl);
+
+  let cleaned = raw
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\bdata-testid\s*=\s*['"][^'"]*['"]/gi, ' ')
+    .replace(/\b(?:class|style|loading|decoding|src|srcset|alt|width|height)\s*=\s*['"][^'"]*['"]/gi, ' ')
+    .replace(/\$\d+(?:\.\d{2})?(?:\s*\(\d+% off\))?/gi, ' ')
+    .replace(/\b\d+% off\b/gi, ' ')
+    .replace(/([A-Za-z])by\s+[A-Za-z0-9_-]+$/i, '$1')
+    .replace(/\bby\s+[A-Za-z0-9_-]+$/i, ' ')
+    .replace(/\b(?:favorite|add to favorites|add to cart|cart)\b/gi, ' ');
+
+  cleaned = cleanText(cleaned)
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[|•]+$/g, '')
+    .trim();
+
+  if (!cleaned || looksContaminatedTitle(cleaned) || cleaned.length < 4) return fallbackTitle;
+  if (/^[^A-Za-z]*$/.test(cleaned)) return fallbackTitle;
+
+  return cleaned || fallbackTitle;
+}
+
 export function isAbsoluteHttpUrl(value: unknown) {
   return /^https?:\/\//i.test(cleanText(value));
 }
@@ -207,15 +256,18 @@ function canonicalProductUrl(value: string, baseUrl = DEFAULT_SHOP_URL) {
   }
 }
 
-function titleFromHtml(html: string) {
-  return cleanText(
-    metaContent(html, 'og:title') ||
-    metaContent(html, 'twitter:title', 'name') ||
-    decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
-  )
-    .replace(/\s*\|\s*Redbubble\s*$/i, '')
-    .replace(/\s*by\s+InkWanderStudio\s*$/i, '')
-    .trim();
+function titleFromHtml(html: string, targetUrl = '') {
+  return sanitizeImportedProductTitle(
+    cleanText(
+      metaContent(html, 'og:title') ||
+      metaContent(html, 'twitter:title', 'name') ||
+      decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
+    )
+      .replace(/\s*\|\s*Redbubble\s*$/i, '')
+      .replace(/\s*by\s+InkWanderStudio\s*$/i, '')
+      .trim(),
+    targetUrl
+  );
 }
 
 function imageFromHtml(html: string, pageUrl: string) {
@@ -343,7 +395,7 @@ export async function importRedbubbleProduct(productUrl: string, sourceShopName 
 
     const html = response.html;
     const resolvedTargetUrl = canonicalProductUrl(canonicalUrl(html, targetUrl), targetUrl);
-    const title = titleFromHtml(html);
+    const title = titleFromHtml(html, resolvedTargetUrl);
     const description = cleanText(metaContent(html, 'og:description') || metaContent(html, 'description', 'name')).slice(0, 360);
     const imageUrl = imageFromHtml(html, resolvedTargetUrl);
     const productType = productTypeFromUrlOrTitle(resolvedTargetUrl, title);
