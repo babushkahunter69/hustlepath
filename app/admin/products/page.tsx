@@ -639,9 +639,15 @@ async function browserJsonRedbubbleProductsAction(formData: FormData) {
 async function csvRedbubbleProductsAction(formData: FormData) {
   'use server';
 
-  const csv = String(formData.get('csv_data') || '').trim();
+  let csv = String(formData.get('csv_data') || '').trim();
+  const csvFile = formData.get('csv_file');
+
+  if (!csv && csvFile instanceof File && csvFile.size > 0) {
+    csv = (await csvFile.text()).trim();
+  }
+
   const rows = parseCsvRows(csv);
-  if (!rows.length) flashRedirect('Paste CSV rows with title, product_url, image_url, product_type, niche, tags.');
+  if (!rows.length) flashRedirect('Paste raw CSV text or upload a .csv file with title, product_url, image_url, product_type, niche, tags.');
 
   const { inserted, skipped, errors } = await importRows(rows);
   const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
@@ -807,10 +813,11 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <button type="submit" className="primary-link">Save manual product</button>
         </form>
 
-        <form action={csvRedbubbleProductsAction} className="product-form admin-section">
+        <form action={csvRedbubbleProductsAction} encType="multipart/form-data" className="product-form admin-section">
           <h2>CSV bulk import</h2>
-          <p className="admin-muted">Recommended: run <code>npm run scrape:redbubble</code> locally, then import the generated <code>redbubble-products.csv</code> here. Columns: title, product_url, image_url, product_type, niche, tags. Valid rows become Ready products; invalid rows and duplicates are skipped.</p>
-          <label className="field"><span>CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,product_url,image_url,product_type,niche,tags\nFinancially Flexible Morally Exhausted,https://www.redbubble.com/i/sticker/Financially-Flexible-Morally-Exhausted-by-InkWanderStudio/181480283/7sgk,https://ih1.redbubble.net/image...,Sticker,millennial humor,"adulting, relatable stickers"'} /></label>
+          <p className="admin-muted">Recommended: run <code>npm run scrape:redbubble</code> locally, then upload the generated <code>redbubble-products.csv</code> file here. You can still paste raw CSV text if you prefer. Columns: title, product_url, image_url, product_type, niche, tags. Valid rows become Ready products; invalid rows and duplicates are skipped.</p>
+          <label className="field"><span>Upload CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
+          <label className="field"><span>Or paste CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,product_url,image_url,product_type,niche,tags\nFinancially Flexible Morally Exhausted,https://www.redbubble.com/i/sticker/Financially-Flexible-Morally-Exhausted-by-InkWanderStudio/181480283/7sgk,https://ih1.redbubble.net/image...,Sticker,millennial humor,"adulting, relatable stickers"'} /></label>
           <button type="submit" className="primary-link">Import CSV products</button>
         </form>
 
