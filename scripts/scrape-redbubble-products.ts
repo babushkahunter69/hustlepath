@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, type Page } from 'playwright';
+import { sanitizeImportedProductTitle } from '../lib/redbubbleProductSource';
 
 type ProductRow = {
   title: string;
@@ -404,8 +405,14 @@ async function main() {
       diagnostics.push(result.diagnostics);
 
       for (const row of result.rows) {
-        if (!row.product_url || !row.image_url || hasBadTitle(row.title) || hasBadImageUrl(row.image_url)) continue;
-        if (!rowsByUrl.has(row.product_url)) rowsByUrl.set(row.product_url, row);
+        const safeTitle = sanitizeImportedProductTitle(row.title, row.product_url);
+        if (!row.product_url || !row.image_url || hasBadTitle(safeTitle) || hasBadImageUrl(row.image_url)) continue;
+        if (!rowsByUrl.has(row.product_url)) {
+          rowsByUrl.set(row.product_url, {
+            ...row,
+            title: safeTitle || titleFromUrl(row.product_url),
+          });
+        }
       }
 
       const moved = await gotoNextPage(page);
