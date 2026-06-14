@@ -29,17 +29,45 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     return url;
   };
   const srcsetUrls = (srcset) => clean(srcset).split(',').map((part) => normalizeUrl(part.trim().split(/\s+/)[0])).filter(Boolean);
+  const backgroundUrls = (value) => {
+    const output = [];
+    const text = clean(value);
+    if (!text) return output;
+    let cursor = 0;
+    while (cursor < text.length) {
+      const start = text.indexOf('url(', cursor);
+      if (start === -1) break;
+      const end = text.indexOf(')', start + 4);
+      if (end === -1) break;
+      let candidate = text.slice(start + 4, end).trim();
+      if ((candidate.startsWith('"') && candidate.endsWith('"')) || (candidate.startsWith("'") && candidate.endsWith("'"))) {
+        candidate = candidate.slice(1, -1);
+      }
+      const normalized = normalizeUrl(candidate);
+      if (normalized) output.push(normalized);
+      cursor = end + 1;
+    }
+    return output;
+  };
   const imageCandidates = (el) => [
     normalizeUrl(el.currentSrc),
-    ...srcsetUrls(el.getAttribute('srcset')),
-    ...srcsetUrls(el.getAttribute('data-srcset')),
-    normalizeUrl(el.getAttribute('src')),
-    normalizeUrl(el.getAttribute('data-src')),
+    normalizeUrl(el.getAttribute && el.getAttribute('src')),
+    normalizeUrl(el.getAttribute && el.getAttribute('data-src')),
+    ...srcsetUrls(el.getAttribute && el.getAttribute('srcset')),
+    ...srcsetUrls(el.getAttribute && el.getAttribute('data-srcset')),
+    ...backgroundUrls(el.style && el.style.backgroundImage),
   ].filter(Boolean);
-  const visibleEnough = (el) => {
-    if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+  const visibleRect = (el) => {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
     const rect = el.getBoundingClientRect();
-    return rect.width > 24 && rect.height > 24 && rect.bottom > 0 && rect.right > 0;
+    if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0) return null;
+    return rect;
+  };
+  const largeVisibleRect = (el) => {
+    const rect = visibleRect(el);
+    if (!rect) return null;
+    if (rect.width <= 80 || rect.height <= 80) return null;
+    return rect;
   };
   const tileFor = (el) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
   const uniqueBy = (items, keyFn) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
@@ -52,22 +80,17 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     const value = clean(url).toLowerCase();
     return !value || value.includes('/boom/client/') || value.includes('.svg') || value.includes('/avatar') || value.includes('avatar.') || value.includes('logo') || value.includes('icon') || value.includes('heart') || value.includes('favorite') || value.includes('placeholder') || value.includes('sprite');
   };
-  const isProductImage = (url) => {
+  const isAcceptableImageUrl = (url) => {
     const value = clean(url).toLowerCase();
     if (isBadImageUrl(value)) return false;
-    try {
-      const parsed = new URL(value);
-      return (parsed.hostname.includes('rbcdn') || parsed.hostname.includes('redbubble.net')) && parsed.pathname.includes('/image');
-    } catch {
-      return false;
-    }
+    return value.startsWith('http://') || value.startsWith('https://');
   };
   const isProductLink = (link) => {
     if (!link) return false;
     if (isBadLabel(link.getAttribute('aria-label')) || isBadLabel(link.getAttribute('title'))) return false;
     try {
       const url = new URL(normalizeUrl(link.getAttribute('href') || link.href), location.origin);
-      return /(^|\.)redbubble\.com$/i.test(url.hostname) && url.pathname.split('/').includes('i');
+      return url.hostname.toLowerCase().includes('redbubble.com') && url.pathname.split('/').includes('i');
     } catch {
       return false;
     }
@@ -103,106 +126,99 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     if (altText && !isBadTitleText(altText) && !looksLikePrice(altText)) return altText;
     return titleFromUrl(productUrl);
   };
-  const findBestTitleLink = (tile, imageRect) => {
-    const links = Array.from((tile || document).querySelectorAll('a[href]'))
-      .filter((link) => visibleEnough(link))
-      .filter(isProductLink)
-      .map((link) => ({ element: link, text: clean(link.textContent), rect: link.getBoundingClientRect() }))
-      .filter((item) => item.text && !isBadTitleText(item.text) && !looksLikePrice(item.text));
-
-    const belowImage = links.filter((item) => item.rect.top >= imageRect.top - 16);
-    const pool = belowImage.length ? belowImage : links;
-    pool.sort((a, b) => {
-      const scoreA = Math.abs(a.rect.top - imageRect.bottom) + Math.abs(a.rect.left - imageRect.left);
-      const scoreB = Math.abs(b.rect.top - imageRect.bottom) + Math.abs(b.rect.left - imageRect.left);
-      return scoreA - scoreB;
-    });
-    return pool[0]?.element || null;
+  const nearestLinkForImage = (imageRect, links, tile) => {
+    const tileLinks = links.filter((item) => item.tile === tile || (tile && tile.contains && tile.contains(item.element)));
+    const pool = tileLinks.length ? tileLinks : links;
+    const ranked = pool
+      .map((item) => {
+        const verticalPenalty = item.rect.top >= imageRect.top - 24 ? 0 : 1200;
+        const distance = Math.abs(item.rect.top - imageRect.bottom) + Math.abs(item.rect.left - imageRect.left);
+        return { item, score: distance + verticalPenalty };
+      })
+      .sort((a, b) => a.score - b.score);
+    return ranked[0]?.item || null;
   };
 
-  const allLinks = Array.from(document.querySelectorAll('a[href]'));
   const productLinks = uniqueBy(
-    allLinks
-      .filter((link) => visibleEnough(link))
-      .filter(isProductLink)
-      .map((link) => ({
-        element: link,
-        productUrl: normalizeUrl(link.getAttribute('href') || link.href),
-        tile: tileFor(link),
-        rect: link.getBoundingClientRect(),
-        text: clean(link.textContent),
-      })),
-    (item) => item.productUrl
-  );
-
-  const allMedia = Array.from(document.querySelectorAll('img, source'));
-  const allImageUrls = allMedia.flatMap((el) => imageCandidates(el));
-  const rejectedUiImageUrls = [];
-  const acceptedProductImageUrls = [];
-
-  const productImages = uniqueBy(
-    Array.from(document.querySelectorAll('img'))
-      .filter((img) => visibleEnough(img))
-      .map((img) => {
-        const urls = uniqueBy(imageCandidates(img), (url) => url);
-        urls.forEach((url) => {
-          if (url && isBadImageUrl(url)) rejectedUiImageUrls.push(url);
-        });
-        const imageUrl = urls.find(isProductImage) || '';
-        if (!imageUrl) return null;
-        acceptedProductImageUrls.push(imageUrl);
+    Array.from(document.querySelectorAll('a[href]'))
+      .map((link) => {
+        const rect = visibleRect(link);
+        if (!rect || !isProductLink(link)) return null;
         return {
-          element: img,
-          imageUrl,
-          tile: tileFor(img),
-          rect: img.getBoundingClientRect(),
-          alt: clean(img.getAttribute('alt')),
+          element: link,
+          productUrl: normalizeUrl(link.getAttribute('href') || link.href),
+          tile: tileFor(link),
+          rect,
+          text: clean(link.textContent),
         };
       })
       .filter(Boolean),
-    (item) => item.imageUrl
+    (item) => item.productUrl
   );
 
-  const rejectReasons = [];
+  const visibleLargeImageCandidates = [];
+  const acceptedProductImages = [];
+  const rejectedImages = [];
+
+  Array.from(document.querySelectorAll('img')).forEach((img) => {
+    const rect = largeVisibleRect(img);
+    if (!rect) return;
+    const urls = uniqueBy(imageCandidates(img), (url) => url);
+    const acceptedUrl = urls.find(isAcceptableImageUrl) || '';
+    if (!acceptedUrl) {
+      rejectedImages.push({ reason: 'no acceptable image url', urls: urls.slice(0, 5) });
+      return;
+    }
+    visibleLargeImageCandidates.push({ element: img, urls, rect });
+    acceptedProductImages.push({
+      element: img,
+      imageUrl: acceptedUrl,
+      tile: tileFor(img),
+      rect,
+      alt: clean(img.getAttribute('alt')),
+      source: 'img',
+    });
+  });
+
+  Array.from(document.querySelectorAll('article, li, section, div')).forEach((el) => {
+    const rect = largeVisibleRect(el);
+    if (!rect) return;
+    const ownUrls = backgroundUrls(el.style && el.style.backgroundImage);
+    const parentUrls = backgroundUrls(el.parentElement && el.parentElement.style && el.parentElement.style.backgroundImage);
+    const urls = uniqueBy([...ownUrls, ...parentUrls].filter(Boolean), (url) => url);
+    if (!urls.length) return;
+    const acceptedUrl = urls.find(isAcceptableImageUrl) || '';
+    if (!acceptedUrl) {
+      rejectedImages.push({ reason: 'background image rejected', urls: urls.slice(0, 5) });
+      return;
+    }
+    acceptedProductImages.push({
+      element: el,
+      imageUrl: acceptedUrl,
+      tile: tileFor(el),
+      rect,
+      alt: '',
+      source: 'background',
+    });
+  });
+
+  const productImages = uniqueBy(acceptedProductImages, (item) => item.imageUrl + '|' + Math.round(item.rect.top) + '|' + Math.round(item.rect.left));
   const pairedRows = [];
+  const rejectReasons = [];
   const usedProductUrls = new Set();
-  const usedImageUrls = new Set();
 
-  productImages.forEach((imageItem, index) => {
-    const tile = imageItem.tile;
-    const tileLinks = uniqueBy(
-      Array.from((tile || document).querySelectorAll('a[href]'))
-        .filter((link) => visibleEnough(link))
-        .filter(isProductLink)
-        .map((link) => ({
-          element: link,
-          productUrl: normalizeUrl(link.getAttribute('href') || link.href),
-          rect: link.getBoundingClientRect(),
-          text: clean(link.textContent),
-        })),
-      (item) => item.productUrl
-    );
-
-    const titleLink = findBestTitleLink(tile, imageItem.rect);
-    const matchedLink = tileLinks.find((item) => item.element === titleLink)
-      || tileLinks.find((item) => item.text && !isBadTitleText(item.text) && !looksLikePrice(item.text))
-      || tileLinks[0]
-      || productLinks[index]
-      || null;
-
+  productImages.forEach((imageItem) => {
+    const matchedLink = nearestLinkForImage(imageItem.rect, productLinks, imageItem.tile);
     if (!matchedLink) {
       rejectReasons.push({ image_url: imageItem.imageUrl, reason: 'no product link' });
       return;
     }
-
-    const title = titleFromLink(titleLink || matchedLink.element, matchedLink.productUrl, imageItem.alt);
+    const title = titleFromLink(matchedLink.element, matchedLink.productUrl, imageItem.alt);
     if (!title || isBadTitleText(title) || looksLikePrice(title)) {
       rejectReasons.push({ product_url: matchedLink.productUrl, reason: 'bad title', title });
       return;
     }
-
     usedProductUrls.add(matchedLink.productUrl);
-    usedImageUrls.add(imageItem.imageUrl);
     pairedRows.push({
       title,
       product_url: matchedLink.productUrl,
@@ -216,20 +232,11 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
 
   const fallbackRows = [];
   const remainingLinks = productLinks.filter((item) => !usedProductUrls.has(item.productUrl));
-  const remainingImages = productImages.filter((item) => !usedImageUrls.has(item.imageUrl));
-  const fallbackMax = Math.min(remainingLinks.length, remainingImages.length);
-
+  const fallbackMax = Math.min(remainingLinks.length, productImages.length);
   for (let index = 0; index < fallbackMax; index += 1) {
     const linkItem = remainingLinks[index];
-    const imageItem = remainingImages[index];
-    if (!linkItem) {
-      rejectReasons.push({ reason: 'no product link' });
-      continue;
-    }
-    if (!imageItem) {
-      rejectReasons.push({ product_url: linkItem.productUrl, reason: 'no image URL' });
-      continue;
-    }
+    const imageItem = productImages[index];
+    if (!linkItem || !imageItem) continue;
     const title = titleFromLink(linkItem.element, linkItem.productUrl, imageItem.alt);
     if (!title || isBadTitleText(title) || looksLikePrice(title)) {
       rejectReasons.push({ product_url: linkItem.productUrl, reason: 'bad title', title });
@@ -251,13 +258,12 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
 
   console.log('Redbubble capture diagnostics');
   console.log('Product links found:', productLinks.length);
-  console.log('Product images found:', productImages.length);
-  console.log('Paired products:', captured.length);
-  console.log('Rejected rows:', rejectReasons.length, rejectReasons);
-  console.log('First 20 image URLs:', allImageUrls.slice(0, 20));
+  console.log('Visible large image candidates:', visibleLargeImageCandidates.length);
+  console.log('Accepted product images:', productImages.length, productImages.map((item) => item.imageUrl));
+  console.log('Rejected images with reason:', rejectedImages);
+  console.log('Paired rows:', captured);
+  console.log('First 20 image URLs:', allMedia.flatMap((el) => imageCandidates(el)).slice(0, 20));
   console.log('First 10 product URLs:', productLinks.slice(0, 10).map((item) => item.productUrl));
-  console.log('Accepted product image URLs:', acceptedProductImageUrls);
-  console.log('Rejected avatar/UI image URLs count:', rejectedUiImageUrls.length);
   console.table(captured);
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -306,12 +312,13 @@ function isSpecificRedbubbleProductUrl(value: unknown) {
 
 function isRedbubbleProductImageUrl(value: unknown) {
   const imageUrl = cleanText(value).toLowerCase();
-  if (!imageUrl || imageUrl.includes('/boom/client/') || imageUrl.includes('.svg')) return false;
+  if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) return false;
+  if (imageUrl.includes('/boom/client/') || imageUrl.includes('.svg')) return false;
   if (imageUrl.includes('/avatar') || imageUrl.includes('avatar.')) return false;
-  if (/logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return false;
+  if (imageUrl.includes('logo') || imageUrl.includes('icon') || imageUrl.includes('heart') || imageUrl.includes('favorite') || imageUrl.includes('placeholder') || imageUrl.includes('sprite')) return false;
   try {
     const url = new URL(imageUrl);
-    return (url.hostname.includes('rbcdn') || url.hostname.includes('redbubble.net')) && url.pathname.includes('/image');
+    return url.hostname.includes('rbcdn') || url.hostname.includes('redbubble.net') || url.hostname.includes('redbubble.com');
   } catch {
     return false;
   }
@@ -452,7 +459,7 @@ async function insertBrowserCapturedProduct(input: {
 }) {
   if (isBadBrowserTitle(input.title)) return { inserted: false, skipped: true, reason: 'bad product title' };
   if (!isSpecificRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
-  if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a Redbubble product image URL, not an avatar or UI asset' };
+  if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a visible Redbubble product image URL, not an avatar or UI asset' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
   const shopName = cleanText(input.shopName) || 'InkWanderStudio';
@@ -750,7 +757,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <div className="product-form admin-section">
           <h2>Browser-assisted paginated capture</h2>
-          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet now anchors on each visible product image, pulls the title from the nearest visible product link under that image, and falls back to visible-order pairing on mobile if tile matching misses.</p>
+          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet now finds large visible rendered product images first, reads URLs from image elements and background images, and pairs them to nearby visible product links by screen position in mobile view.</p>
           <ol className="admin-muted">
             <li>Open Redbubble shop page 1.</li>
             <li>Run the capture products snippet in the browser console.</li>
