@@ -66,6 +66,19 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
       return '';
     }
   };
+  const looksLikePrice = (text) => {
+    const value = clean(text);
+    if (!value) return false;
+    let digits = 0;
+    for (const char of value.replace('$', '').replaceAll(',', '')) {
+      if (char >= '0' && char <= '9') {
+        digits += 1;
+        continue;
+      }
+      if (char !== '.') return false;
+    }
+    return digits > 0;
+  };
   const visibleTitle = (card, productUrl, imageAlt) => {
     const ignored = /^(favorite|add to favorites|add to cart|cart|redbubble|inkwanderstudio)$/i;
     const nodes = Array.from(card.querySelectorAll('h1,h2,h3,[data-testid],a,span,p,div'));
@@ -73,8 +86,8 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
       .map((node) => clean(node.textContent))
       .filter((text) => text && text.length > 2 && text.length < 120)
       .filter((text) => !ignored.test(text))
-      .filter((text) => !/^\$?\d+(\.\d{2})?$/.test(text))
-      .filter((text) => !/^by\s+/i.test(text));
+      .filter((text) => !looksLikePrice(text))
+      .filter((text) => !text.toLowerCase().startsWith('by '));
     const fromUrl = titleFromUrl(productUrl);
     const matching = texts.find((text) => fromUrl && text.toLowerCase().includes(fromUrl.split(' ')[0].toLowerCase()));
     return matching || texts[0] || (!ignored.test(clean(imageAlt)) ? clean(imageAlt) : '') || fromUrl;
@@ -274,29 +287,6 @@ function keywordsForProduct(productType: string, niche: string, tags: string, sh
 async function productExists(targetUrl: string) {
   const existing = await sql`select id from products where target_url = ${targetUrl} limit 1`;
   return existing.length > 0;
-}
-
-async function deleteBadImportedProductsAction() {
-  'use server';
-
-  const result = await sql`
-    with deleted as (
-      delete from products
-      where (
-        source like 'redbubble:%'
-        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
-      )
-        and (
-          lower(trim(coalesce(title, ''))) in ('favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio')
-          or coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|avatar|logo|icon|heart|favorite|placeholder|sprite)'
-          or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
-        )
-      returning id
-    )
-    select count(*)::int as count from deleted
-  `;
-
-  flashRedirect(`Deleted ${result[0]?.count || 0} bad Redbubble image imports.`);
 }
 
 async function insertManualProduct(input: {
@@ -625,7 +615,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <button type="submit" className="primary-link">Import Redbubble products</button>
         </form>
 
-        <form action={deleteBadImportedProductsAction} className="product-form admin-section">
+        <form action="/admin/products/delete-bad-redbubble-image-imports" method="post" className="product-form admin-section">
           <h2>Delete bad Redbubble image imports</h2>
           <p className="admin-muted">Delete any saved Redbubble product whose image URL is a UI asset, SVG, /boom/client URL, or not an ih0.redbubble.net or ih1.redbubble.net product image.</p>
           <button type="submit" className="primary-link">Delete bad Redbubble image imports</button>
