@@ -1,4 +1,4 @@
-import { pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
+import { pinterestProductImageDebugSummary, pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
 import { sql } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -25,25 +25,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   }
 
   const result = await resolvePinterestProductImage(product);
-  console.info('Pinterest product source image debug', result);
+  const debug = pinterestProductImageDebugSummary(result);
+  console.info('Pinterest product source image debug', debug);
   const debugHeaders = pinterestProductImageHeaders(result);
 
   if (!result.bytes || !result.contentType) {
     return Response.json(
       {
         error: 'Unable to fetch product image',
-        productId,
-        productImageUrl: result.productImageUrl,
-        productImageUrlIsAbsolute: result.productImageUrlIsAbsolute,
-        productTargetUrl: result.productTargetUrl,
-        productTargetUrlIsAbsolute: result.productTargetUrlIsAbsolute,
-        candidates: result.candidates,
-        sourceUrl: result.sourceUrl,
-        status: result.status,
-        httpStatus: result.httpStatus,
-        contentType: result.contentType,
-        byteLength: result.byteLength,
-        reason: result.reason,
+        ...debug,
       },
       {
         status: 502,
