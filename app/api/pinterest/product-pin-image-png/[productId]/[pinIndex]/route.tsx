@@ -10,6 +10,7 @@ const PIN_WIDTH = 1000;
 const PIN_HEIGHT = 1500;
 const MAX_REMOTE_IMAGE_BYTES = 4_500_000;
 const FETCH_TIMEOUT_MS = 4500;
+const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 type Theme = ReturnType<typeof themeFor>;
 
@@ -191,7 +192,7 @@ async function fetchProductImageDataUrl(imageUrl?: string | null) {
     const response = await fetch(source, {
       signal: controller.signal,
       headers: {
-        accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.8',
       },
       cache: 'force-cache',
     });
@@ -199,7 +200,7 @@ async function fetchProductImageDataUrl(imageUrl?: string | null) {
     if (!response.ok) return null;
 
     const contentType = cleanText(response.headers.get('content-type')).split(';')[0].toLowerCase();
-    if (!contentType.startsWith('image/') || contentType === 'image/svg+xml') return null;
+    if (!SUPPORTED_IMAGE_TYPES.has(contentType)) return null;
 
     const declaredLength = Number(response.headers.get('content-length') || 0);
     if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_IMAGE_BYTES) return null;
