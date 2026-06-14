@@ -2,13 +2,59 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { parseKeywords } from '@/lib/monetization';
-import { importRedbubbleProduct, validateProductSource } from '@/lib/redbubbleProductSource';
+import { importRedbubbleProduct, importRedbubbleShopProducts, validateProductSource } from '@/lib/redbubbleProductSource';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
+
 function flashRedirect(message: string) {
   redirect(`/admin/products?notice=${encodeURIComponent(message)}`);
+}
+
+function productKey(value: unknown) {
+  try {
+    const url = new URL(String(value || '').trim());
+    url.hash = '';
+    url.search = '';
+    return url.toString().toLowerCase();
+  } catch {
+    return String(value || '').trim().toLowerCase();
+  }
+}
+
+async function importRedbubbleShopAction() {
+  'use server';
+
+  const existingProducts = await sql`select target_url from products where target_url is not null`;
+  const existingTargetUrls = new Set(existingProducts.map((product: any) => productKey(product.target_url)));
+  const imported = await importRedbubbleShopProducts(INKWANDERSTUDIO_SHOP_URL);
+
+  if (!imported.ok && imported.products.length === 0) {
+    flashRedirect(imported.errors[0] || 'No valid Redbubble products were found on the InkWanderStudio shop page.');
+  }
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const product of imported.products) {
+    const key = productKey(product.targetUrl);
+    if (!key || existingTargetUrls.has(key)) {
+      skipped += 1;
+      continue;
+    }
+
+    const keywords = Array.from(new Set([...product.tags, product.productType, product.sourceShopName].filter(Boolean)));
+    await sql`
+      insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
+      values (${product.title}, ${product.description || null}, ${product.targetUrl}, ${product.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${product.sourceShopName || imported.shopName}`})
+    `;
+    existingTargetUrls.add(key);
+    inserted += 1;
+  }
+
+  flashRedirect(`Imported ${inserted} ready InkWanderStudio products. Skipped ${skipped} duplicates. Discovered ${imported.discoveredUrls.length} product URLs.`);
 }
 
 async function importRedbubbleProductAction(formData: FormData) {
@@ -20,10 +66,13 @@ async function importRedbubbleProductAction(formData: FormData) {
   const imported = await importRedbubbleProduct(productUrl);
   if (!imported.ok) flashRedirect(imported.error || 'Could not import that Redbubble product page.');
 
-  const keywords = Array.from(new Set([...imported.tags, imported.productType].filter(Boolean)));
+  const existing = await sql`select id from products where target_url = ${imported.targetUrl} limit 1`;
+  if (existing.length) flashRedirect(`${imported.title} is already in the product library.`);
+
+  const keywords = Array.from(new Set([...imported.tags, imported.productType, imported.sourceShopName].filter(Boolean)));
   await sql`
     insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
-    values (${imported.title}, ${imported.description || null}, ${imported.targetUrl}, ${imported.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', 'redbubble')
+    values (${imported.title}, ${imported.description || null}, ${imported.targetUrl}, ${imported.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${imported.sourceShopName || 'InkWanderStudio'}`})
   `;
 
   flashRedirect(`Imported ${imported.title}.`);
@@ -114,8 +163,14 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
         {error && <div className="notice">{error}</div>}
         {params.notice && <div className="notice">{params.notice}</div>}
 
+        <form action={importRedbubbleShopAction} className="product-form admin-section">
+          <h2>Import Redbubble products</h2>
+          <p className="admin-muted">Crawl {INKWANDERSTUDIO_SHOP_URL}, discover specific design/product URLs, extract each main image, skip duplicates, and save only Ready records.</p>
+          <button type="submit" className="primary-link">Import Redbubble products</button>
+        </form>
+
         <form action={importRedbubbleProductAction} className="product-form admin-section">
-          <h2>Import Redbubble product URL</h2>
+          <h2>Import one Redbubble product URL</h2>
           <p className="admin-muted">Paste a specific product/design page. Shop/profile URLs like https://www.redbubble.com/people/InkWanderStudio/ are rejected because they do not identify one design image.</p>
           <label className="field"><span>Specific product URL</span><input name="product_url" placeholder="https://www.redbubble.com/i/sticker/..." /></label>
           <button type="submit" className="primary-link">Import and extract image</button>
