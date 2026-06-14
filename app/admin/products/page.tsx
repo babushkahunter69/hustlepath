@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
+const IMAGE_CHECK_TIMEOUT_MS = 7000;
+const IMAGE_URL_RE = /\.(png|jpe?g|webp)(\?|$)/i;
 
 function flashRedirect(message: string) {
   redirect(`/admin/products?notice=${encodeURIComponent(message)}`);
@@ -82,6 +84,30 @@ async function productExists(targetUrl: string) {
   return existing.length > 0;
 }
 
+async function isLoadableImageUrl(imageUrl: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), IMAGE_CHECK_TIMEOUT_MS);
+    const response = await fetch(imageUrl, {
+      signal: controller.signal,
+      headers: {
+        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.6,*/*;q=0.4',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      },
+      cache: 'no-store',
+    });
+
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    return response.ok && (contentType.startsWith('image/') || IMAGE_URL_RE.test(imageUrl));
+  } catch {
+    return false;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function insertManualProduct(input: {
   title: string;
   description?: string;
@@ -94,6 +120,7 @@ async function insertManualProduct(input: {
 }) {
   const validation = validateProductSource({ target_url: input.targetUrl, image_url: input.imageUrl });
   if (validation.status !== 'ready') return { inserted: false, skipped: true, reason: validation.reason };
+  if (!(await isLoadableImageUrl(input.imageUrl))) return { inserted: false, skipped: true, reason: 'image_url is not loadable as an image from the server' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
   const shopName = cleanText(input.shopName) || 'InkWanderStudio';
