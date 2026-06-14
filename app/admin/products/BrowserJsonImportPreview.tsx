@@ -8,16 +8,25 @@ function cleanText(value: unknown) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function isProductImageUrl(value: unknown) {
+function imageRejectReason(value: unknown) {
   const imageUrl = cleanText(value).toLowerCase();
-  if (!imageUrl || imageUrl.includes('/boom/client/') || imageUrl.includes('.svg')) return false;
-  if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return false;
+  if (!imageUrl) return 'Missing image URL';
+  if (imageUrl.includes('/boom/client/')) return 'Internal Redbubble UI asset (/boom/client/)';
+  if (imageUrl.includes('.svg')) return 'SVG asset instead of product image';
+  if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return 'UI asset, icon, logo, or placeholder';
   try {
     const url = new URL(imageUrl);
-    return /^ih\d?\.redbubble\.net$/i.test(url.hostname) && url.pathname.includes('/image.') && /\.(png|jpe?g|webp)$/i.test(url.pathname);
+    if (!/^ih[01]\.redbubble\.net$/i.test(url.hostname)) return 'Image host must be ih0.redbubble.net or ih1.redbubble.net';
+    if (!url.pathname.includes('/image.')) return 'Image path must contain /image.';
+    if (!/\.(png|jpe?g|webp)$/i.test(url.pathname)) return 'Image must end in png, jpg, jpeg, or webp';
+    return '';
   } catch {
-    return false;
+    return 'Image URL is not a valid absolute URL';
   }
+}
+
+function isProductImageUrl(value: unknown) {
+  return !imageRejectReason(value);
 }
 
 function splitJsonValues(input: string) {
@@ -64,12 +73,14 @@ function parseRows(json: string) {
   return values.flatMap((value) => Array.isArray(value) ? value : [value]).filter((row) => row && typeof row === 'object') as Record<string, unknown>[];
 }
 
-function isProductUrl(value: string) {
+function productUrlRejectReason(value: string) {
   try {
     const url = new URL(value);
-    return /(^|\.)redbubble\.com$/i.test(url.hostname) && url.pathname.split('/').includes('i');
+    if (!/(^|\.)redbubble\.com$/i.test(url.hostname)) return 'Product URL is not on redbubble.com';
+    if (!url.pathname.split('/').includes('i')) return 'Product URL is not a specific /i/... Redbubble product URL';
+    return '';
   } catch {
-    return false;
+    return 'Product URL is not a valid absolute URL';
   }
 }
 
@@ -78,10 +89,12 @@ function rowStatus(row: Record<string, unknown>) {
   const productUrl = cleanText(row.product_url || row.target_url || row.url);
   const imageUrl = cleanText(row.image_url || row.image);
 
-  if (!title || BAD_TITLES.has(title.toLowerCase())) return 'Bad title';
-  if (!isProductUrl(productUrl)) return 'Bad product URL';
-  if (!isProductImageUrl(imageUrl)) return 'Bad image URL';
-  return 'Ready';
+  if (!title || BAD_TITLES.has(title.toLowerCase())) return 'Rejected: bad title';
+  const productReason = productUrlRejectReason(productUrl);
+  if (productReason) return `Rejected: ${productReason}`;
+  const imageReason = imageRejectReason(imageUrl);
+  if (imageReason) return `Rejected: ${imageReason}`;
+  return 'Valid';
 }
 
 export default function BrowserJsonImportPreview() {
@@ -96,7 +109,11 @@ export default function BrowserJsonImportPreview() {
     }
   }, [json]);
 
-  const readyCount = preview.rows.filter((row) => rowStatus(row) === 'Ready').length;
+  const statuses = preview.rows.map((row) => rowStatus(row));
+  const validCount = statuses.filter((status) => status === 'Valid').length;
+  const rejectedStatuses = statuses.filter((status) => status !== 'Valid');
+  const rejectedCount = rejectedStatuses.length;
+  const firstRejectedReasons = Array.from(new Set(rejectedStatuses)).slice(0, 5);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -113,7 +130,8 @@ export default function BrowserJsonImportPreview() {
       {preview.error && <div className="notice">{preview.error}</div>}
       {preview.rows.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
-          <p className="admin-muted">Preview: {readyCount} Ready of {preview.rows.length} rows. Check this before importing.</p>
+          <p className="admin-muted">Validation summary: Valid rows {validCount}. Rejected rows {rejectedCount}.</p>
+          {firstRejectedReasons.length > 0 && <p className="admin-muted">First 5 rejected reasons: {firstRejectedReasons.join(' | ')}</p>}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
@@ -136,7 +154,7 @@ export default function BrowserJsonImportPreview() {
                     </td>
                     <td style={{ padding: 8, maxWidth: 260 }}>{title || 'Missing title'}</td>
                     <td style={{ padding: 8, maxWidth: 360, overflowWrap: 'anywhere' }}>{productUrl}</td>
-                    <td style={{ padding: 8, fontWeight: 800, color: status === 'Ready' ? '#166534' : '#991b1b' }}>{status}</td>
+                    <td style={{ padding: 8, fontWeight: 800, color: status === 'Valid' ? '#166534' : '#991b1b' }}>{status}</td>
                   </tr>
                 );
               })}
