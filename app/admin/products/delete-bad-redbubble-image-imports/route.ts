@@ -4,6 +4,13 @@ import { sql } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+type ProductRow = {
+  id: string;
+  image_url?: string | null;
+  source?: string | null;
+  target_url?: string | null;
+};
+
 function redirectWithNotice(request: NextRequest, message: string) {
   const url = new URL('/admin/products', request.url);
   url.searchParams.set('notice', message);
@@ -31,94 +38,168 @@ function logCleanupError(stage: string, error: unknown, extra: Record<string, un
   });
 }
 
-async function countBadImports() {
-  const result = await sql`
-    select count(*)::int as count
+function cleanText(value: unknown) {
+  return String(value || '').trim();
+}
+
+function isImportedRedbubbleProduct(product: ProductRow) {
+  const source = cleanText(product.source).toLowerCase();
+  const targetUrl = cleanText(product.target_url).toLowerCase();
+  return source.startsWith('redbubble:') || targetUrl.includes('redbubble.com/');
+}
+
+function isBadRedbubbleImageUrl(value: unknown) {
+  const imageUrl = cleanText(value).toLowerCase();
+  if (!imageUrl) return true;
+  if (imageUrl.includes('/boom/client/')) return true;
+  if (imageUrl.endsWith('.svg')) return true;
+  if (imageUrl.includes('.svg?')) return true;
+  if (imageUrl.includes('.svg#')) return true;
+  if (imageUrl.includes('www.redbubble.com/boom')) return true;
+  if (!imageUrl.includes('ih0.redbubble.net') && !imageUrl.includes('ih1.redbubble.net')) return true;
+  if (!imageUrl.includes('/image.')) return true;
+  return false;
+}
+
+async function fetchImportedRedbubbleProducts() {
+  const rows = await sql`
+    select id, image_url, source, target_url
     from products
-    where (
-      source like 'redbubble:%'
-      or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
-    )
-      and (
-        coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
-        or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
-      )
+    where source like 'redbubble:%'
+       or target_url like 'https://%redbubble.com/%'
+       or target_url like 'http://%redbubble.com/%'
   `;
-  return Number(result[0]?.count || 0);
+  return rows as ProductRow[];
 }
 
-async function deleteBadImports() {
-  const result = await sql`
-    with deleted as (
-      delete from products
-      where (
-        source like 'redbubble:%'
-        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
-      )
-        and (
-          coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
-          or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
-        )
-      returning id
-    )
-    select count(*)::int as count from deleted
+async function fetchProductsColumnNames() {
+  const rows = await sql`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'products'
   `;
-  return Number(result[0]?.count || 0);
+  return new Set(rows.map((row: any) => String(row.column_name || '').toLowerCase()).filter(Boolean));
 }
 
-async function invalidateBadImports() {
-  const result = await sql`
-    with updated as (
-      update products
-      set status = 'archived',
-          updated_at = now()
-      where (
-        source like 'redbubble:%'
-        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
+async function deleteBadImports(ids: string[]) {
+  let deletedCount = 0;
+
+  for (const id of ids) {
+    const result = await sql`
+      with deleted as (
+        delete from products
+        where id = ${id}
+        returning id
       )
-        and (
-          coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
-          or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
+      select count(*)::int as count from deleted
+    `;
+    deletedCount += Number(result[0]?.count || 0);
+  }
+
+  return deletedCount;
+}
+
+async function invalidateBadImports(ids: string[]) {
+  const columns = await fetchProductsColumnNames();
+  const hasReady = columns.has('ready');
+  const hasValidationStatus = columns.has('validation_status');
+  const hasUpdatedAt = columns.has('updated_at');
+  let invalidatedCount = 0;
+
+  for (const id of ids) {
+    let updated = 0;
+
+    if (hasReady && hasValidationStatus && hasUpdatedAt) {
+      const result = await sql`
+        with updated as (
+          update products
+          set status = 'invalid',
+              ready = false,
+              validation_status = 'bad_image_url',
+              updated_at = now()
+          where id = ${id}
+          returning id
         )
-      returning id
-    )
-    select count(*)::int as count from updated
-  `;
-  return Number(result[0]?.count || 0);
+        select count(*)::int as count from updated
+      `;
+      updated = Number(result[0]?.count || 0);
+    } else if (hasReady && hasValidationStatus) {
+      const result = await sql`
+        with updated as (
+          update products
+          set status = 'invalid',
+              ready = false,
+              validation_status = 'bad_image_url'
+          where id = ${id}
+          returning id
+        )
+        select count(*)::int as count from updated
+      `;
+      updated = Number(result[0]?.count || 0);
+    } else if (hasUpdatedAt) {
+      const result = await sql`
+        with updated as (
+          update products
+          set status = 'invalid',
+              updated_at = now()
+          where id = ${id}
+          returning id
+        )
+        select count(*)::int as count from updated
+      `;
+      updated = Number(result[0]?.count || 0);
+    } else {
+      const result = await sql`
+        with updated as (
+          update products
+          set status = 'invalid'
+          where id = ${id}
+          returning id
+        )
+        select count(*)::int as count from updated
+      `;
+      updated = Number(result[0]?.count || 0);
+    }
+
+    invalidatedCount += updated;
+  }
+
+  return invalidatedCount;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const candidateCount = await countBadImports();
+    const importedProducts = await fetchImportedRedbubbleProducts();
+    const badProducts = importedProducts.filter((product) => isImportedRedbubbleProduct(product) && isBadRedbubbleImageUrl(product.image_url));
+    const badIds = badProducts.map((product) => String(product.id)).filter(Boolean);
 
-    if (candidateCount === 0) {
-      return redirectWithNotice(request, 'Deleted 0 bad imports.');
+    if (badIds.length === 0) {
+      return redirectWithNotice(request, 'Cleaned 0 bad Redbubble image imports.');
     }
 
     try {
-      const deletedCount = await deleteBadImports();
-      return redirectWithNotice(request, `Deleted ${deletedCount} bad imports.`);
+      const deletedCount = await deleteBadImports(badIds);
+      return redirectWithNotice(request, `Cleaned ${deletedCount} bad Redbubble image imports.`);
     } catch (deleteError) {
-      logCleanupError('delete', deleteError, { candidateCount });
+      logCleanupError('delete', deleteError, { badIds, badCount: badIds.length });
 
       try {
-        const invalidatedCount = await invalidateBadImports();
-        return redirectWithNotice(request, `Marked ${invalidatedCount} bad imports invalid.`);
+        const invalidatedCount = await invalidateBadImports(badIds);
+        return redirectWithNotice(request, `Cleaned ${invalidatedCount} bad Redbubble image imports.`);
       } catch (updateError) {
-        logCleanupError('invalidate', updateError, { candidateCount });
-        const message = errorMessage(updateError) || errorMessage(deleteError);
+        logCleanupError('invalidate', updateError, { badIds, badCount: badIds.length });
         const notice = process.env.NODE_ENV === 'production'
-          ? `Cleanup failed. Delete blocked and invalidation failed: ${message}`
-          : `Cleanup failed. table=products image_column=image_url delete_error=${errorMessage(deleteError)} invalidate_error=${message}`;
+          ? `Cleanup failed: ${errorMessage(updateError)}`
+          : `Cleanup failed. delete_error=${errorMessage(deleteError)} invalidate_error=${errorMessage(updateError)}`;
         return redirectWithNotice(request, notice);
       }
     }
   } catch (error) {
-    logCleanupError('count', error);
-    const message = errorMessage(error);
+    logCleanupError('fetch-and-filter', error);
     const notice = process.env.NODE_ENV === 'production'
-      ? `Cleanup failed: ${message}`
-      : `Cleanup failed while inspecting products.image_url: ${message}`;
+      ? `Cleanup failed: ${errorMessage(error)}`
+      : `Cleanup failed while loading imported Redbubble products: ${errorMessage(error)}`;
     return redirectWithNotice(request, notice);
   }
 }
