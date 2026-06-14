@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { attachProductPinUrls, generateProductPinterestPins, normalizeProductPinterestMeta } from '@/lib/productPinterest';
 import { parseKeywords } from '@/lib/monetization';
+import ProductPinPreviewImage from './ProductPinPreviewImage';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -146,7 +147,7 @@ export default async function ProductPinsPage() {
             <div className="admin-topline">Redbubble Pinterest workflow</div>
             <h1>Product pin command center</h1>
             <p className="admin-muted">
-              Generate Pinterest-ready campaigns for Redbubble products, preview the exact image output, copy tracked links, and open the Pinterest pin builder with the same image route.
+              Generate Pinterest-ready campaigns for Redbubble products, preview the exact local image route, copy tracked links, and open the Pinterest pin builder.
             </p>
           </div>
           <Link href="/admin" className="secondary-link small">Dashboard</Link>
@@ -155,7 +156,7 @@ export default async function ProductPinsPage() {
         {error && <div className="notice">Database not ready: {error}</div>}
 
         <div className="notice">
-          Open image and Open Pinterest now use the same canonical product pin image URL, so the admin preview matches what gets pinned.
+          Admin previews use the local generated image route. The Pinterest builder uses the same route path as an absolute media URL.
         </div>
 
         <div className="stat-grid three">
@@ -208,22 +209,21 @@ export default async function ProductPinsPage() {
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
-                      const imageUrl = new URL(imagePath, canonicalSiteUrl).toString();
+                      const pinterestImageUrl = new URL(imagePath, canonicalSiteUrl).toString();
                       const trackedUrl = trackedPath.startsWith('http') ? trackedPath : new URL(trackedPath, canonicalSiteUrl).toString();
                       const pinterestDescription = [pin.title, shortPreviewText(pin.description, 320)].filter(Boolean).join(' - ');
-                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(imageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
+                      const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(pinterestImageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
                       const posted = pin.status === 'posted';
                       const focusTags = Array.isArray(pin.keyword_focus) ? pin.keyword_focus.slice(0, 3) : [];
 
                       return (
                         <div key={`${product.id}-${index}-${pin.title}`} className={`pin-card admin-pin-card ${posted ? 'posted' : ''}`}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={imageUrl}
-                              alt={pin.title || `Pin ${index + 1}`}
-                              loading="lazy"
-                              style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(15, 23, 42, 0.1)', background: '#f8fafc' }}
+                            <ProductPinPreviewImage
+                              src={imagePath}
+                              title={pin.title || `Pin ${index + 1}`}
+                              niche={pin.niche}
+                              description={pin.description}
                             />
                             <span>{pin.angle || 'pin'} · {posted ? 'posted' : 'draft'}</span>
                           </div>
@@ -234,7 +234,7 @@ export default async function ProductPinsPage() {
                           {focusTags.length > 0 && <p className="admin-muted">Keywords: {focusTags.join(', ')}</p>}
 
                           <div className="pin-tools">
-                            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
+                            <a href={imagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
                             <a href={trackedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
                             <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">Open Pinterest</a>
                           </div>
@@ -245,8 +245,13 @@ export default async function ProductPinsPage() {
                           </div>
 
                           <div className="tracked-url-box">
-                            <small>Image URL used by preview and Pinterest</small>
-                            <code>{imageUrl}</code>
+                            <small>Local preview image route</small>
+                            <code>{imagePath}</code>
+                          </div>
+
+                          <div className="tracked-url-box">
+                            <small>Pinterest media URL</small>
+                            <code>{pinterestImageUrl}</code>
                           </div>
 
                           <form action={productPinsAction} className="pin-status-form">
