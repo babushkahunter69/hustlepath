@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { parseKeywords } from '@/lib/monetization';
 import { pinterestProductImageDebugSummary, pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
+import { validateProductSource } from '@/lib/redbubbleProductSource';
 import { sql } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -368,6 +369,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 
   if (!product || !Number.isFinite(index)) {
     return new ImageResponse(<NotFoundImage message="Pin not found" />, { width: PIN_WIDTH, height: PIN_HEIGHT });
+  }
+
+  const validation = validateProductSource(product);
+  if (validation.status !== 'ready') {
+    return new ImageResponse(<NotFoundImage message="Product source incomplete" />, {
+      width: PIN_WIDTH,
+      height: PIN_HEIGHT,
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Product-Source-Status': validation.status,
+        'X-Product-Source-Reason': validation.reason,
+      },
+    });
   }
 
   const pin = getPin(product.pinterest_meta, index);
