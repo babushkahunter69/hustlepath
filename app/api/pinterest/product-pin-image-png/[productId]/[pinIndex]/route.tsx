@@ -11,7 +11,12 @@ const PIN_HEIGHT = 1500;
 const MAX_REMOTE_IMAGE_BYTES = 4_500_000;
 const FETCH_TIMEOUT_MS = 4500;
 
-type Template = 'sticker' | 'shirt' | 'gift' | 'quote';
+type Theme = ReturnType<typeof themeFor>;
+
+type WrappedText = {
+  lines: string[];
+  truncated: boolean;
+};
 
 function getPin(meta: any, index: number) {
   const source = meta && typeof meta === 'object' ? meta : {};
@@ -23,74 +28,146 @@ function cleanText(value: unknown, fallback = '') {
   return String(value || fallback).replace(/\s+/g, ' ').trim();
 }
 
-function splitTitle(value: string, maxLine = 16, maxLines = 4) {
+function titleCase(value: string) {
+  return cleanText(value).replace(/\w\S*/g, (word) => {
+    if (word.length <= 3 && word === word.toUpperCase()) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+}
+
+function withoutTrailingWeakWord(value: string) {
+  return cleanText(value).replace(/\s+\b(for|on|and|with|of|to|in|the|a|an)\b$/i, '').trim();
+}
+
+function wrapText(value: string, maxChars: number, maxLines: number): WrappedText {
   const words = cleanText(value).split(' ').filter(Boolean);
   const lines: string[] = [];
   let line = '';
+  let truncated = false;
 
   for (const word of words) {
     const next = line ? `${line} ${word}` : word;
-    if (next.length > maxLine && line) {
+    if (next.length > maxChars && line) {
       lines.push(line);
       line = word;
+      if (lines.length === maxLines) {
+        truncated = true;
+        break;
+      }
+    } else if (word.length > maxChars && !line) {
+      lines.push(word);
+      line = '';
+      if (lines.length === maxLines) {
+        truncated = true;
+        break;
+      }
     } else {
       line = next;
     }
   }
 
-  if (line) lines.push(line);
-  return lines.slice(0, maxLines);
+  if (!truncated && line) lines.push(line);
+  const visible = lines.slice(0, maxLines).map(withoutTrailingWeakWord).filter(Boolean);
+  return {
+    lines: visible,
+    truncated: truncated || lines.length > maxLines || words.join(' ').length > visible.join(' ').length,
+  };
 }
 
-function inferTemplate(text: string, index: number): Template {
-  const value = text.toLowerCase();
-  if (value.includes('shirt') || value.includes('tee')) return 'shirt';
-  if (value.includes('gift') || value.includes('mug')) return 'gift';
-  if (value.includes('quote') || value.includes('sarcastic') || value.includes('funny')) return 'quote';
-  if (value.includes('sticker')) return 'sticker';
-  const templates: Template[] = ['sticker', 'shirt', 'gift', 'quote'];
-  return templates[Math.abs(index) % templates.length];
+function clampSentence(value: string, maxChars: number) {
+  const text = cleanText(value);
+  if (text.length <= maxChars) return text;
+  const words = text.split(' ');
+  const output: string[] = [];
+
+  for (const word of words) {
+    const next = [...output, word].join(' ');
+    if (next.length > maxChars) break;
+    output.push(word);
+  }
+
+  return withoutTrailingWeakWord(output.join(' ')).replace(/[,.!?;:]$/, '');
 }
 
 function themeFor(index: number) {
   const themes = [
-    { page: '#f6efe7', card: '#fffdf9', ink: '#161616', accent: '#d97706', chip: '#f3e8d7', soft: '#fde6cf' },
-    { page: '#f4f0fb', card: '#ffffff', ink: '#28163a', accent: '#db2777', chip: '#f8d8ea', soft: '#eadcf8' },
-    { page: '#edf8f2', card: '#ffffff', ink: '#183525', accent: '#2f855a', chip: '#d7f0df', soft: '#cfe9d9' },
-    { page: '#eef4fb', card: '#ffffff', ink: '#152c4f', accent: '#2563eb', chip: '#d8e8ff', soft: '#dbeafe' },
+    { page: '#f8f1e8', card: '#fffdf8', ink: '#161616', accent: '#d8482f', chip: '#ffe1d4', soft: '#f4c7a5' },
+    { page: '#eef5f2', card: '#ffffff', ink: '#172821', accent: '#217c67', chip: '#d7eee6', soft: '#b9ddd1' },
+    { page: '#f4f2fb', card: '#ffffff', ink: '#251b35', accent: '#7c3aed', chip: '#e7ddff', soft: '#d8cbf5' },
+    { page: '#f3f6ee', card: '#ffffff', ink: '#202411', accent: '#607b28', chip: '#e2ecc8', soft: '#cbdba3' },
   ];
   return themes[Math.abs(index) % themes.length];
 }
 
-function strongerHeadline(pin: any, product: any) {
-  const raw = cleanText(pin?.title || pin?.design_focus || product.title, 'InkWanderStudio Redbubble Find');
-  return raw.replace(/\bRedbubble\b/gi, '').replace(/\s+/g, ' ').trim() || raw;
+function isWeakTitle(value: string) {
+  const title = cleanText(value).toLowerCase();
+  if (!title) return true;
+  if (/\b(unique|trending|perfect|seasonal|cute|stylish)\s+(redbubble|stickers?|gifts?|shirts?|finds?)\b/i.test(title)) return true;
+  if (/\b(gifts?|ideas?|stickers?|shirts?|finds?)\s+(for|on|and|with|of|to|in)$/i.test(title)) return true;
+  if (/\bfor\s+(side|people|friends)$/i.test(title)) return true;
+  return title.length < 10;
 }
 
-function buildCaption(pin: any, product: any, template: Template) {
-  const fallback = cleanText(product.description, 'Save this InkWanderStudio design for later.');
-  const text = cleanText(pin?.description, fallback);
-  const short = text.length > 165 ? `${text.slice(0, 162).trim()}...` : text;
-  if (template === 'sticker') return short || 'Sticker idea for laptops, water bottles, notebooks, and funny little gifts.';
-  if (template === 'shirt') return short || 'Graphic tee idea with a real niche point of view and giftable humor.';
-  if (template === 'gift') return short || 'Giftable design pick for mugs, stickers, and personal little surprises.';
-  return short || 'Pinterest-worthy funny art with clean, readable text and a specific niche hook.';
+function designName(pin: any, product: any) {
+  const fromPin = cleanText(pin?.design_focus || pin?.designFocus);
+  const fromProduct = cleanText(product?.title, 'InkWanderStudio design');
+  const raw = fromPin || fromProduct;
+  return titleCase(
+    raw
+      .replace(/\b(redbubble|stickers?|shirts?|tees?|mugs?|gifts?)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || fromProduct
+  );
+}
+
+function nicheLabel(pin: any, product: any) {
+  const text = cleanText(pin?.niche || product?.niche || product?.title, 'relatable stickers');
+  const normalized = text
+    .replace(/funny graphic design/gi, 'relatable stickers')
+    .replace(/redbubble/gi, '')
+    .trim();
+  return titleCase(clampSentence(normalized || 'relatable stickers', 34));
+}
+
+function headlineFor(pin: any, product: any) {
+  const design = designName(pin, product);
+  const raw = cleanText(pin?.title);
+  if (!isWeakTitle(raw) && raw.toLowerCase().includes(design.split(' ')[0].toLowerCase())) {
+    return titleCase(withoutTrailingWeakWord(raw.replace(/\bRedbubble\b/gi, '')));
+  }
+
+  const niche = nicheLabel(pin, product).toLowerCase();
+  if (niche.includes('coffee')) return `${design} Coffee Sticker`;
+  if (niche.includes('introvert')) return `${design} Introvert Sticker`;
+  if (niche.includes('millennial')) return `${design} Millennial Sticker`;
+  if (niche.includes('animal')) return `${design} Sarcastic Sticker`;
+  if (niche.includes('relatable')) return `${design} Relatable Sticker`;
+  return `${design} Sticker`;
+}
+
+function captionFor(pin: any, product: any) {
+  const design = designName(pin, product);
+  const niche = nicheLabel(pin, product).toLowerCase();
+  const raw = cleanText(pin?.description);
+  const generic = !raw || /unique redbubble|trending redbubble|perfect gifts|seasonal gift ideas|category pin/i.test(raw);
+
+  if (!generic) return clampSentence(raw, 150);
+  if (niche.includes('coffee')) return `${design} brings coffee culture humor to stickers, mugs, laptops, and cozy desk setups.`;
+  if (niche.includes('introvert')) return `${design} is a relatable introvert humor design for laptops, notebooks, mugs, and quiet-day gifts.`;
+  if (niche.includes('millennial')) return `${design} turns millennial humor into a specific Redbubble design worth saving for later.`;
+  if (niche.includes('animal')) return `${design} gives sarcastic animal art a giftable Redbubble look for stickers, tees, and mugs.`;
+  return `${design} is a design-specific Redbubble find for relatable stickers, gifts, notebooks, and everyday favorites.`;
 }
 
 function keywordTags(pin: any, product: any) {
   const raw = Array.isArray(pin?.keyword_focus) ? pin.keyword_focus : parseKeywords(product?.keywords);
-  const tags = raw.map((value: unknown) => cleanText(value)).filter(Boolean);
-  if (tags.length) return tags.slice(0, 3);
-  return ['InkWanderStudio', 'Redbubble design', 'gift idea'];
-}
+  const tags = raw
+    .map((value: unknown) => titleCase(clampSentence(value as string, 22)))
+    .filter(Boolean)
+    .filter((tag: string) => !/redbubble design/i.test(tag));
 
-function nicheLabel(pin: any, product: any) {
-  return cleanText(pin?.niche, product?.title || 'Pinterest product pin').slice(0, 48);
-}
-
-function formatProductLabel(product: any) {
-  const title = cleanText(product?.title, 'InkWanderStudio design');
-  return title.length > 52 ? `${title.slice(0, 49).trim()}...` : title;
+  const fallback = [nicheLabel(pin, product), 'Sticker Idea', 'Giftable Art'];
+  return Array.from(new Set([...tags, ...fallback])).slice(0, 3);
 }
 
 function imageDataToBase64(bytes: Uint8Array) {
@@ -158,80 +235,157 @@ function NotFoundImage({ message }: { message: string }) {
   );
 }
 
-function FallbackArtwork({ title, theme, niche }: { title: string; theme: ReturnType<typeof themeFor>; niche: string }) {
-  const words = splitTitle(title, 12, 3);
+function TopBar({ theme, niche }: { theme: Theme; niche: string }) {
+  return (
+    <div style={{ height: 74, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+      <div style={{ fontSize: 28, fontWeight: 900, color: theme.ink, letterSpacing: 1 }}>InkWanderStudio</div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          maxWidth: 430,
+          borderRadius: 999,
+          padding: '12px 20px',
+          background: theme.chip,
+          color: theme.ink,
+          fontSize: 22,
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {niche}
+      </div>
+    </div>
+  );
+}
+
+function FallbackHero({ title, niche, theme }: { title: string; niche: string; theme: Theme }) {
+  const titleLines = wrapText(title, 16, 3).lines;
   return (
     <div
       style={{
         width: '100%',
         height: '100%',
         display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        padding: 42,
-        background: `linear-gradient(135deg, ${theme.soft}, ${theme.card})`,
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `linear-gradient(145deg, ${theme.card} 0%, ${theme.soft} 100%)`,
+        padding: 52,
       }}
     >
       <div
         style={{
+          width: 650,
+          height: 650,
           display: 'flex',
-          alignItems: 'center',
-          alignSelf: 'flex-start',
-          borderRadius: 999,
-          padding: '10px 18px',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
           background: theme.card,
-          border: `3px solid ${theme.ink}`,
-          fontSize: 24,
-          fontWeight: 800,
           color: theme.ink,
+          border: `6px solid ${theme.ink}`,
+          borderRadius: 34,
+          padding: 44,
+          transform: 'rotate(-3deg)',
+          boxShadow: '0 36px 70px rgba(0,0,0,0.18)',
         }}
       >
-        {niche.toUpperCase()}
+        <div style={{ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', background: theme.chip, borderRadius: 999, padding: '12px 18px', fontSize: 24, fontWeight: 900 }}>
+          {niche}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {titleLines.map((line, index) => (
+            <div key={`${line}-${index}`} style={{ fontSize: titleLines.length >= 3 ? 72 : 86, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textTransform: 'uppercase' }}>
+              {line}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: theme.accent }}>REDBUBBLE DESIGN</div>
+          <div style={{ width: 180, height: 12, background: theme.accent, borderRadius: 999 }} />
+        </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {words.map((word, index) => (
-          <div
-            key={`${word}-${index}`}
-            style={{
-              fontSize: 76,
-              lineHeight: 0.94,
-              fontWeight: 1000,
-              letterSpacing: -2,
-              textTransform: 'uppercase',
-              color: theme.ink,
-            }}
-          >
-            {word}
+    </div>
+  );
+}
+
+function HeroImage({ imageDataUrl, title, niche, theme }: { imageDataUrl: string | null; title: string; niche: string; theme: Theme }) {
+  return (
+    <div
+      style={{
+        height: 790,
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        background: theme.card,
+        border: `5px solid ${theme.ink}`,
+        borderRadius: 30,
+        boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
+      }}
+    >
+      {imageDataUrl ? (
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(180deg, ${theme.card}, ${theme.chip})`, padding: 34 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+      ) : (
+        <FallbackHero title={title} niche={niche} theme={theme} />
+      )}
+    </div>
+  );
+}
+
+function BottomCopy({ title, caption, tags, theme }: { title: string; caption: string; tags: string[]; theme: Theme }) {
+  const titleWrap = wrapText(title, 19, 3);
+  const descriptionWrap = wrapText(caption, 42, 3);
+  const titleSize = titleWrap.lines.length >= 3 ? 54 : 62;
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        background: theme.card,
+        border: `5px solid ${theme.ink}`,
+        borderRadius: 30,
+        padding: 32,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 178 }}>
+        {titleWrap.lines.map((line, index) => (
+          <div key={`${line}-${index}`} style={{ fontSize: titleSize, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textTransform: 'uppercase' }}>
+            {line}
           </div>
         ))}
       </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
-        <div
-          style={{
-            width: 180,
-            height: 180,
-            borderRadius: 999,
-            background: theme.accent,
-            opacity: 0.9,
-            border: `6px solid ${theme.ink}`,
-          }}
-        />
-        <div
-          style={{
-            flex: 1,
-            height: 24,
-            borderRadius: 999,
-            background: theme.ink,
-            opacity: 0.14,
-          }}
-        />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minHeight: 108, marginTop: 14 }}>
+        {descriptionWrap.lines.map((line, index) => (
+          <div key={`${line}-${index}`} style={{ fontSize: 28, lineHeight: 1.2, color: theme.ink }}>
+            {line}{index === descriptionWrap.lines.length - 1 && descriptionWrap.truncated ? '...' : ''}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 18, minHeight: 46 }}>
+        {tags.map((tag, index) => (
+          <div key={`${tag}-${index}`} style={{ display: 'flex', alignItems: 'center', borderRadius: 999, padding: '9px 15px', background: theme.chip, color: theme.ink, fontSize: 20, fontWeight: 800, whiteSpace: 'nowrap' }}>
+            {tag}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', gap: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 19, color: theme.accent, fontWeight: 900, letterSpacing: 1 }}>SAVE FOR LATER</div>
+          <div style={{ fontSize: 23, color: theme.ink, fontWeight: 800 }}>Design-specific Redbubble find</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, padding: '16px 24px', background: theme.accent, color: '#fff', fontSize: 23, fontWeight: 900, whiteSpace: 'nowrap' }}>
+          Open Design
+        </div>
       </div>
     </div>
   );
@@ -253,198 +407,31 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   }
 
   const pin = getPin(product.pinterest_meta, index);
-  const fullText = `${pin?.title || ''} ${pin?.description || ''} ${product.title || ''} ${product.description || ''}`;
-  const template = inferTemplate(fullText, index);
   const theme = themeFor(index);
-  const headline = strongerHeadline(pin, product);
-  const lines = splitTitle(headline, 16, 4);
-  const caption = buildCaption(pin, product, template);
-  const tags = keywordTags(pin, product);
   const niche = nicheLabel(pin, product);
+  const headline = headlineFor(pin, product);
+  const caption = captionFor(pin, product);
+  const tags = keywordTags(pin, product);
   const imageDataUrl = await fetchProductImageDataUrl(product.image_url);
-  const eyebrow =
-    template === 'quote'
-      ? 'RELATABLE FIND'
-      : template === 'shirt'
-        ? 'GRAPHIC TEE IDEA'
-        : template === 'gift'
-          ? 'GIFTABLE REDBUBBLE PICK'
-          : 'SAVE-WORTHY STICKER';
 
   return new ImageResponse(
     <div
       style={{
-        width: '100%',
-        height: '100%',
+        width: PIN_WIDTH,
+        height: PIN_HEIGHT,
         display: 'flex',
         flexDirection: 'column',
         background: theme.page,
         color: theme.ink,
         fontFamily: 'Arial, Helvetica, sans-serif',
-        padding: 34,
-        gap: 28,
+        padding: 44,
+        gap: 18,
+        overflow: 'hidden',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          width: '100%',
-          height: 860,
-          borderRadius: 42,
-          overflow: 'hidden',
-          background: theme.card,
-          border: `4px solid ${theme.ink}`,
-          boxShadow: '0 28px 80px rgba(0,0,0,0.12)',
-          position: 'relative',
-        }}
-      >
-        {imageDataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <FallbackArtwork title={headline} theme={theme} niche={niche} />
-        )}
-
-        <div
-          style={{
-            position: 'absolute',
-            top: 28,
-            left: 28,
-            display: 'flex',
-            alignItems: 'center',
-            borderRadius: 999,
-            padding: '12px 18px',
-            background: 'rgba(255,255,255,0.94)',
-            border: `3px solid ${theme.ink}`,
-            fontSize: 22,
-            fontWeight: 900,
-            letterSpacing: 1,
-          }}
-        >
-          INKWANDERSTUDIO
-        </div>
-
-        <div
-          style={{
-            position: 'absolute',
-            right: 28,
-            top: 28,
-            display: 'flex',
-            alignItems: 'center',
-            borderRadius: 999,
-            padding: '12px 18px',
-            background: theme.accent,
-            color: '#fff',
-            border: `3px solid ${theme.ink}`,
-            fontSize: 20,
-            fontWeight: 900,
-            letterSpacing: 1,
-          }}
-        >
-          {eyebrow}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          width: '100%',
-          flex: 1,
-          borderRadius: 42,
-          background: theme.card,
-          border: `4px solid ${theme.ink}`,
-          padding: 36,
-          gap: 22,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            alignSelf: 'flex-start',
-            borderRadius: 999,
-            padding: '10px 16px',
-            background: theme.chip,
-            fontSize: 22,
-            fontWeight: 800,
-            color: theme.ink,
-          }}
-        >
-          {niche.toUpperCase()}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {lines.map((line, lineIndex) => (
-            <div
-              key={`${line}-${lineIndex}`}
-              style={{
-                fontSize: lines.length >= 4 ? 68 : 78,
-                lineHeight: 0.94,
-                fontWeight: 1000,
-                letterSpacing: -2,
-                textTransform: 'uppercase',
-              }}
-            >
-              {line}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ fontSize: 30, lineHeight: 1.25, color: theme.ink }}>{caption}</div>
-
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {tags.map((tag, tagIndex) => (
-            <div
-              key={`${tag}-${tagIndex}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: 999,
-                padding: '10px 16px',
-                background: theme.chip,
-                fontSize: 22,
-                fontWeight: 700,
-                color: theme.ink,
-              }}
-            >
-              {tag}
-            </div>
-          ))}
-        </div>
-
-        <div
-          style={{
-            marginTop: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 20,
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: 20, letterSpacing: 1.4, fontWeight: 800, color: theme.accent }}>REDBUBBLE DESIGN</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: theme.ink }}>{formatProductLabel(product)}</div>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 999,
-              padding: '16px 24px',
-              background: theme.accent,
-              color: '#fff',
-              border: `4px solid ${theme.ink}`,
-              fontSize: 24,
-              fontWeight: 900,
-            }}
-          >
-            SAVE THIS PIN
-          </div>
-        </div>
-      </div>
+      <TopBar theme={theme} niche={niche} />
+      <HeroImage imageDataUrl={imageDataUrl} title={headline} niche={niche} theme={theme} />
+      <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     { width: PIN_WIDTH, height: PIN_HEIGHT }
   );
