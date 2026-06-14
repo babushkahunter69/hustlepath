@@ -2,14 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { parseKeywords } from '@/lib/monetization';
-import { importRedbubbleProduct, importRedbubbleShopProducts, validateProductSource } from '@/lib/redbubbleProductSource';
+import { importRedbubbleProduct, importRedbubbleShopProducts, isRedbubbleProductUrl, validateProductSource } from '@/lib/redbubbleProductSource';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
-const IMAGE_CHECK_TIMEOUT_MS = 7000;
-const IMAGE_URL_RE = /\.(png|jpe?g|webp)(\?|$)/i;
+const BROWSER_IMAGE_WARNING_KEYWORD = 'image_server_check:failed';
+const BROWSER_IMAGE_WARNING = 'Image may not be server-fetchable, but was captured from browser.';
 const BROWSER_IMPORT_SNIPPET = `(() => {
   const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
@@ -196,42 +196,19 @@ function parseBrowserJsonRows(json: string) {
   return rows.filter((row) => row && typeof row === 'object') as Record<string, unknown>[];
 }
 
-function keywordsForProduct(productType: string, niche: string, tags: string, shopName = 'InkWanderStudio') {
+function keywordsForProduct(productType: string, niche: string, tags: string, shopName = 'InkWanderStudio', extra: string[] = []) {
   return Array.from(new Set([
     ...parseKeywords(tags),
     ...parseKeywords(niche),
     cleanText(productType),
     cleanText(shopName),
+    ...extra.map(cleanText),
   ].filter(Boolean)));
 }
 
 async function productExists(targetUrl: string) {
   const existing = await sql`select id from products where target_url = ${targetUrl} limit 1`;
   return existing.length > 0;
-}
-
-async function isLoadableImageUrl(imageUrl: string) {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-  try {
-    const controller = new AbortController();
-    timeoutId = setTimeout(() => controller.abort(), IMAGE_CHECK_TIMEOUT_MS);
-    const response = await fetch(imageUrl, {
-      signal: controller.signal,
-      headers: {
-        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.6,*/*;q=0.4',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-      },
-      cache: 'no-store',
-    });
-
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    return response.ok && (contentType.startsWith('image/') || IMAGE_URL_RE.test(imageUrl));
-  } catch {
-    return false;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
 }
 
 async function insertManualProduct(input: {
@@ -246,7 +223,6 @@ async function insertManualProduct(input: {
 }) {
   const validation = validateProductSource({ target_url: input.targetUrl, image_url: input.imageUrl });
   if (validation.status !== 'ready') return { inserted: false, skipped: true, reason: validation.reason };
-  if (!(await isLoadableImageUrl(input.imageUrl))) return { inserted: false, skipped: true, reason: 'image_url is not loadable as an image from the server' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
   const shopName = cleanText(input.shopName) || 'InkWanderStudio';
@@ -258,6 +234,31 @@ async function insertManualProduct(input: {
     values (${input.title}, ${description || null}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}`})
   `;
   return { inserted: true, skipped: false, reason: 'ready' };
+}
+
+async function insertBrowserCapturedProduct(input: {
+  title: string;
+  targetUrl: string;
+  imageUrl: string;
+  productType?: string;
+  niche?: string;
+  tags?: string;
+  shopName?: string;
+}) {
+  if (!cleanText(input.title)) return { inserted: false, skipped: true, reason: 'missing title' };
+  if (!isRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
+  if (!/^https?:\/\//i.test(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be an absolute http/https URL' };
+  if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
+
+  const shopName = cleanText(input.shopName) || 'InkWanderStudio';
+  const keywords = keywordsForProduct(input.productType || '', input.niche || '', input.tags || '', shopName, [BROWSER_IMAGE_WARNING_KEYWORD]);
+  const description = [input.productType, input.niche].map(cleanText).filter(Boolean).join(' · ') || BROWSER_IMAGE_WARNING;
+
+  await sql`
+    insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
+    values (${input.title}, ${description}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}:browser`})
+  `;
+  return { inserted: true, skipped: false, reason: 'ready', warning: BROWSER_IMAGE_WARNING_KEYWORD };
 }
 
 async function importRedbubbleShopAction() {
@@ -372,6 +373,39 @@ async function importRows(rows: Record<string, unknown>[]) {
   return { inserted, skipped, errors };
 }
 
+async function importBrowserRows(rows: Record<string, unknown>[]) {
+  let inserted = 0;
+  let skipped = 0;
+  let warnings = 0;
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    const title = cleanText(row.title);
+    const targetUrl = cleanText(row.product_url || row.target_url || row.url);
+    const imageUrl = cleanText(row.image_url || row.image);
+
+    const result = await insertBrowserCapturedProduct({
+      title,
+      targetUrl,
+      imageUrl,
+      productType: cleanText(row.product_type),
+      niche: cleanText(row.niche),
+      tags: cleanText(row.tags),
+      shopName: cleanText(row.source_shop || row.source_shop_name || row.shop || row.source) || 'InkWanderStudio',
+    });
+
+    if (result.inserted) {
+      inserted += 1;
+      if (result.warning) warnings += 1;
+    } else {
+      skipped += 1;
+      errors.push(`${title || targetUrl || 'import row'}: ${result.reason}`);
+    }
+  }
+
+  return { inserted, skipped, warnings, errors };
+}
+
 async function browserJsonRedbubbleProductsAction(formData: FormData) {
   'use server';
 
@@ -386,9 +420,9 @@ async function browserJsonRedbubbleProductsAction(formData: FormData) {
   }
 
   if (!rows.length) flashRedirect('Browser import JSON did not contain any product rows.');
-  const { inserted, skipped, errors } = await importRows(rows);
+  const { inserted, skipped, warnings, errors } = await importBrowserRows(rows);
   const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
-  flashRedirect(`Browser JSON import added ${inserted} Ready products and skipped ${skipped}.${suffix}`);
+  flashRedirect(`Browser JSON import complete. Imported: ${inserted}. Ready: ${inserted}. Skipped: ${skipped}. Warnings: ${warnings ? 'image server check failed' : 'none'}.${suffix}`);
 }
 
 async function csvRedbubbleProductsAction(formData: FormData) {
@@ -465,6 +499,13 @@ function statusStyles(status: string) {
   return { background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fca5a5' };
 }
 
+function productWarnings(product: any) {
+  const keywords = parseKeywords(product?.keywords);
+  const warnings: string[] = [];
+  if (keywords.includes(BROWSER_IMAGE_WARNING_KEYWORD)) warnings.push(BROWSER_IMAGE_WARNING);
+  return warnings;
+}
+
 export default async function ProductsPage({ searchParams }: { searchParams?: Promise<{ notice?: string }> }) {
   const params = searchParams ? await searchParams : {};
   let products: any[] = [];
@@ -513,7 +554,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
           <h2>Browser JSON import</h2>
-          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. You can also paste multiple JSON arrays one after another; rows are validated, duplicate product URLs are skipped, and valid rows become Ready products.</p>
+          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Browser-captured image URLs are trusted when they are absolute URLs, even if Vercel cannot fetch them during import.</p>
           <label className="field"><span>Browser JSON</span><textarea name="browser_json" rows={8} placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]\n[{\n  "title": "Another Captured Design",\n  "product_url": "https://www.redbubble.com/i/t-shirt/...",\n  "image_url": "https://ih1.redbubble.net/image..."\n}]'} /></label>
           <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
@@ -567,6 +608,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           {products.length === 0 && !error && <div className="empty-state">No products yet.</div>}
           {products.map((product) => {
             const validation = validateProductSource(product);
+            const warnings = productWarnings(product);
             return (
               <form key={product.id} action={updateProductAction} className="product-editor">
                 <input type="hidden" name="id" value={product.id} />
@@ -578,6 +620,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
                   {validation.label}
                 </div>
                 <p className="admin-muted">{validation.reason}</p>
+                {warnings.map((warning) => <p key={warning} className="admin-muted">Warning: {warning}</p>)}
                 <label className="field"><span>Target URL</span><input name="target_url" defaultValue={product.target_url || ''} /></label>
                 <div className="field-row">
                   <label className="field"><span>Image URL</span><input name="image_url" defaultValue={product.image_url || ''} /></label>
