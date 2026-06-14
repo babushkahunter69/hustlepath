@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import BrowserJsonImportPreview from './BrowserJsonImportPreview';
 import { sql } from '@/lib/db';
 import { parseKeywords } from '@/lib/monetization';
-import { importRedbubbleProduct, importRedbubbleShopProducts, isRedbubbleProductUrl, validateProductSource } from '@/lib/redbubbleProductSource';
+import { importRedbubbleProduct, importRedbubbleShopProducts, isRedbubbleProductUrl, sanitizeImportedProductTitle, validateProductSource } from '@/lib/redbubbleProductSource';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -432,6 +432,7 @@ async function insertManualProduct(input: {
   tags?: string;
   shopName?: string;
 }) {
+  const normalizedTitle = sanitizeImportedProductTitle(input.title, input.targetUrl);
   const validation = validateProductSource({ target_url: input.targetUrl, image_url: input.imageUrl });
   if (validation.status !== 'ready') return { inserted: false, skipped: true, reason: validation.reason };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
@@ -442,7 +443,7 @@ async function insertManualProduct(input: {
 
   await sql`
     insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
-    values (${input.title}, ${description || null}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}`})
+    values (${normalizedTitle}, ${description || null}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}`})
   `;
   return { inserted: true, skipped: false, reason: 'ready' };
 }
@@ -456,7 +457,8 @@ async function insertBrowserCapturedProduct(input: {
   tags?: string;
   shopName?: string;
 }) {
-  if (isBadBrowserTitle(input.title)) return { inserted: false, skipped: true, reason: 'bad product title' };
+  const normalizedTitle = sanitizeImportedProductTitle(input.title, input.targetUrl);
+  if (isBadBrowserTitle(normalizedTitle)) return { inserted: false, skipped: true, reason: 'bad product title' };
   if (!isSpecificRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
   if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a visible Redbubble product image URL, not an avatar or UI asset' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
@@ -467,7 +469,7 @@ async function insertBrowserCapturedProduct(input: {
 
   await sql`
     insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
-    values (${input.title}, ${description}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}:browser`})
+    values (${normalizedTitle}, ${description}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}:browser`})
   `;
   return { inserted: true, skipped: false, reason: 'ready', warning: BROWSER_IMAGE_WARNING_KEYWORD };
 }
@@ -496,7 +498,7 @@ async function importRedbubbleShopAction() {
     const keywords = Array.from(new Set([...product.tags, product.productType, product.sourceShopName].filter(Boolean)));
     await sql`
       insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
-      values (${product.title}, ${product.description || null}, ${product.targetUrl}, ${product.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${product.sourceShopName || imported.shopName}`})
+      values (${sanitizeImportedProductTitle(product.title, product.targetUrl)}, ${product.description || null}, ${product.targetUrl}, ${product.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${product.sourceShopName || imported.shopName}`})
     `;
     existingTargetUrls.add(key);
     inserted += 1;
@@ -520,10 +522,10 @@ async function importRedbubbleProductAction(formData: FormData) {
   const keywords = Array.from(new Set([...imported.tags, imported.productType, imported.sourceShopName].filter(Boolean)));
   await sql`
     insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
-    values (${imported.title}, ${imported.description || null}, ${imported.targetUrl}, ${imported.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${imported.sourceShopName || 'InkWanderStudio'}`})
+    values (${sanitizeImportedProductTitle(imported.title, imported.targetUrl)}, ${imported.description || null}, ${imported.targetUrl}, ${imported.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${imported.sourceShopName || 'InkWanderStudio'}`})
   `;
 
-  flashRedirect(`Imported ${imported.title}.`);
+  flashRedirect(`Imported ${sanitizeImportedProductTitle(imported.title, imported.targetUrl)}.`);
 }
 
 async function manualRedbubbleProductAction(formData: FormData) {
@@ -544,8 +546,8 @@ async function manualRedbubbleProductAction(formData: FormData) {
     shopName: cleanText(formData.get('manual_shop_name')) || 'InkWanderStudio',
   });
 
-  if (!result.inserted) flashRedirect(result.reason === 'duplicate' ? `${title} is already in the product library.` : result.reason);
-  flashRedirect(`Imported ${title} manually. It is Ready for Pinterest pins.`);
+  if (!result.inserted) flashRedirect(result.reason === 'duplicate' ? `${sanitizeImportedProductTitle(title, targetUrl)} is already in the product library.` : result.reason);
+  flashRedirect(`Imported ${sanitizeImportedProductTitle(title, targetUrl)} manually. It is Ready for Pinterest pins.`);
 }
 
 async function importRows(rows: Record<string, unknown>[]) {
@@ -554,9 +556,10 @@ async function importRows(rows: Record<string, unknown>[]) {
   const errors: string[] = [];
 
   for (const row of rows) {
-    const title = cleanText(row.title);
+    const rawTitle = cleanText(row.title);
     const targetUrl = cleanText(row.product_url || row.target_url || row.url);
     const imageUrl = cleanText(row.image_url || row.image);
+    const title = sanitizeImportedProductTitle(rawTitle, targetUrl);
 
     if (!title || !targetUrl || !imageUrl) {
       skipped += 1;
@@ -591,9 +594,10 @@ async function importBrowserRows(rows: Record<string, unknown>[]) {
   const errors: string[] = [];
 
   for (const row of rows) {
-    const title = cleanText(row.title);
+    const rawTitle = cleanText(row.title);
     const targetUrl = cleanText(row.product_url || row.target_url || row.url);
     const imageUrl = cleanText(row.image_url || row.image);
+    const title = sanitizeImportedProductTitle(rawTitle, targetUrl);
 
     const result = await insertBrowserCapturedProduct({
       title,
@@ -656,7 +660,7 @@ async function csvRedbubbleProductsAction(formData: FormData) {
 
 async function createProductAction(formData: FormData) {
   'use server';
-  const title = String(formData.get('title') || '').trim();
+  const title = sanitizeImportedProductTitle(String(formData.get('title') || '').trim(), String(formData.get('target_url') || '').trim());
   const description = String(formData.get('description') || '').trim();
   const targetUrl = String(formData.get('target_url') || '').trim();
   const imageUrl = String(formData.get('image_url') || '').trim();
@@ -687,9 +691,9 @@ async function updateProductAction(formData: FormData) {
     await sql`update products set status = 'active', updated_at = now() where id = ${id}`;
     redirect('/admin/products');
   }
-  const title = String(formData.get('title') || '').trim();
-  const description = String(formData.get('description') || '').trim();
   const targetUrl = String(formData.get('target_url') || '').trim();
+  const title = sanitizeImportedProductTitle(String(formData.get('title') || '').trim(), targetUrl);
+  const description = String(formData.get('description') || '').trim();
   const imageUrl = String(formData.get('image_url') || '').trim();
   const ctaLabel = String(formData.get('cta_label') || 'View product').trim();
   const keywords = parseKeywords(String(formData.get('keywords') || ''));
@@ -758,6 +762,12 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <h2>Delete bad Redbubble image imports</h2>
           <p className="admin-muted">Delete any saved Redbubble product whose image URL is a UI asset, SVG, /boom/client URL, or not an ih0.redbubble.net or ih1.redbubble.net product image.</p>
           <button type="submit" className="primary-link">Delete bad Redbubble image imports</button>
+        </form>
+
+        <form action="/admin/products/repair-redbubble-product-titles" method="post" className="product-form admin-section">
+          <h2>Repair bad Redbubble product titles</h2>
+          <p className="admin-muted">Fix imported product titles that accidentally captured Redbubble HTML, icon markup, or price strings instead of the real design title.</p>
+          <button type="submit" className="primary-link">Repair bad Redbubble titles</button>
         </form>
 
         <div className="product-form admin-section">
@@ -847,11 +857,12 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           {products.map((product) => {
             const validation = validateProductSource(product);
             const warnings = productWarnings(product);
+            const safeTitle = sanitizeImportedProductTitle(product.title || '', product.target_url || '');
             return (
               <form key={product.id} action={updateProductAction} className="product-editor">
                 <input type="hidden" name="id" value={product.id} />
                 <div className="field-row">
-                  <label className="field"><span>Title</span><input name="title" defaultValue={product.title || ''} /></label>
+                  <label className="field"><span>Title</span><input name="title" defaultValue={safeTitle} /></label>
                   <label className="field"><span>Status</span><input value={product.status || 'active'} readOnly /></label>
                 </div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, alignSelf: 'flex-start', borderRadius: 999, padding: '8px 12px', fontWeight: 800, ...statusStyles(validation.status) }}>
