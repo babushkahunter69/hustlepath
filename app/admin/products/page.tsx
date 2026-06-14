@@ -24,6 +24,89 @@ function productKey(value: unknown) {
   }
 }
 
+function cleanText(value: unknown) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function splitCsvLine(line: string) {
+  const cells: string[] = [];
+  let current = '';
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseCsvRows(csv: string) {
+  const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+
+  const headers = splitCsvLine(lines[0]).map((header) => header.toLowerCase().trim());
+  return lines.slice(1).map((line) => {
+    const cells = splitCsvLine(line);
+    return headers.reduce((row: Record<string, string>, header, index) => {
+      row[header] = cells[index] || '';
+      return row;
+    }, {});
+  });
+}
+
+function keywordsForProduct(productType: string, niche: string, tags: string, shopName = 'InkWanderStudio') {
+  return Array.from(new Set([
+    ...parseKeywords(tags),
+    ...parseKeywords(niche),
+    cleanText(productType),
+    cleanText(shopName),
+  ].filter(Boolean)));
+}
+
+async function productExists(targetUrl: string) {
+  const existing = await sql`select id from products where target_url = ${targetUrl} limit 1`;
+  return existing.length > 0;
+}
+
+async function insertManualProduct(input: {
+  title: string;
+  description?: string;
+  targetUrl: string;
+  imageUrl: string;
+  productType?: string;
+  niche?: string;
+  tags?: string;
+  shopName?: string;
+}) {
+  const validation = validateProductSource({ target_url: input.targetUrl, image_url: input.imageUrl });
+  if (validation.status !== 'ready') return { inserted: false, skipped: true, reason: validation.reason };
+  if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
+
+  const shopName = cleanText(input.shopName) || 'InkWanderStudio';
+  const keywords = keywordsForProduct(input.productType || '', input.niche || '', input.tags || '', shopName);
+  const description = cleanText(input.description) || [input.productType, input.niche].map(cleanText).filter(Boolean).join(' · ');
+
+  await sql`
+    insert into products (title, description, target_url, image_url, cta_label, keywords, status, source)
+    values (${input.title}, ${description || null}, ${input.targetUrl}, ${input.imageUrl}, ${'View product'}, ${JSON.stringify(keywords)}::jsonb, 'active', ${`redbubble:${shopName}`})
+  `;
+  return { inserted: true, skipped: false, reason: 'ready' };
+}
+
 async function importRedbubbleShopAction() {
   'use server';
 
@@ -76,6 +159,71 @@ async function importRedbubbleProductAction(formData: FormData) {
   `;
 
   flashRedirect(`Imported ${imported.title}.`);
+}
+
+async function manualRedbubbleProductAction(formData: FormData) {
+  'use server';
+
+  const title = cleanText(formData.get('manual_title'));
+  const targetUrl = cleanText(formData.get('manual_product_url'));
+  const imageUrl = cleanText(formData.get('manual_image_url'));
+  if (!title || !targetUrl || !imageUrl) flashRedirect('Manual import needs title, product URL, and image URL.');
+
+  const result = await insertManualProduct({
+    title,
+    targetUrl,
+    imageUrl,
+    productType: cleanText(formData.get('manual_product_type')),
+    niche: cleanText(formData.get('manual_niche')),
+    tags: cleanText(formData.get('manual_tags')),
+    shopName: cleanText(formData.get('manual_shop_name')) || 'InkWanderStudio',
+  });
+
+  if (!result.inserted) flashRedirect(result.reason === 'duplicate' ? `${title} is already in the product library.` : result.reason);
+  flashRedirect(`Imported ${title} manually. It is Ready for Pinterest pins.`);
+}
+
+async function csvRedbubbleProductsAction(formData: FormData) {
+  'use server';
+
+  const csv = String(formData.get('csv_data') || '').trim();
+  const rows = parseCsvRows(csv);
+  if (!rows.length) flashRedirect('Paste CSV rows with title, product_url, image_url, product_type, niche, tags.');
+
+  let inserted = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    const title = cleanText(row.title);
+    const targetUrl = cleanText(row.product_url || row.target_url || row.url);
+    const imageUrl = cleanText(row.image_url || row.image);
+
+    if (!title || !targetUrl || !imageUrl) {
+      skipped += 1;
+      errors.push(`${title || targetUrl || 'CSV row'}: missing title, product_url, or image_url`);
+      continue;
+    }
+
+    const result = await insertManualProduct({
+      title,
+      targetUrl,
+      imageUrl,
+      productType: cleanText(row.product_type),
+      niche: cleanText(row.niche),
+      tags: cleanText(row.tags),
+      shopName: cleanText(row.source_shop_name || row.shop || row.source) || 'InkWanderStudio',
+    });
+
+    if (result.inserted) inserted += 1;
+    else {
+      skipped += 1;
+      errors.push(`${title}: ${result.reason}`);
+    }
+  }
+
+  const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
+  flashRedirect(`CSV import added ${inserted} Ready products and skipped ${skipped}.${suffix}`);
 }
 
 async function createProductAction(formData: FormData) {
@@ -164,20 +312,50 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
         {params.notice && <div className="notice">{params.notice}</div>}
 
         <form action={importRedbubbleShopAction} className="product-form admin-section">
-          <h2>Import Redbubble products</h2>
-          <p className="admin-muted">Crawl {INKWANDERSTUDIO_SHOP_URL}, discover specific design/product URLs, extract each main image, skip duplicates, and save only Ready records.</p>
+          <h2>Automatic Redbubble import</h2>
+          <p className="admin-muted">Optional: try to crawl {INKWANDERSTUDIO_SHOP_URL}. If Redbubble blocks Vercel with 403, use manual or CSV import below.</p>
           <button type="submit" className="primary-link">Import Redbubble products</button>
         </form>
 
+        <form action={manualRedbubbleProductAction} className="product-form admin-section">
+          <h2>Manual product import</h2>
+          <p className="admin-muted">Use this when Redbubble blocks automatic extraction. Open the Redbubble product in your browser, copy the product page URL and main image URL, then paste them here.</p>
+          <div className="field-row">
+            <label className="field"><span>Product title</span><input name="manual_title" placeholder="Financially Flexible Morally Exhausted" /></label>
+            <label className="field"><span>Product type</span><input name="manual_product_type" placeholder="Sticker, Mug, T-Shirt" /></label>
+          </div>
+          <label className="field"><span>Specific product URL</span><input name="manual_product_url" placeholder="https://www.redbubble.com/i/sticker/..." /></label>
+          <label className="field"><span>Main image URL</span><input name="manual_image_url" placeholder="https://ih1.redbubble.net/image..." /></label>
+          <div className="field-row">
+            <label className="field"><span>Niche</span><input name="manual_niche" placeholder="millennial humor, coffee culture" /></label>
+            <label className="field"><span>Source shop name</span><input name="manual_shop_name" defaultValue="InkWanderStudio" /></label>
+          </div>
+          <label className="field"><span>Tags</span><input name="manual_tags" placeholder="adulting, funny sticker, relatable stickers" /></label>
+          <button type="submit" className="primary-link">Save manual product</button>
+        </form>
+
+        <div className="product-form admin-section">
+          <h2>Browser-assisted image URL</h2>
+          <p className="admin-muted">Open the Redbubble product page in your browser, right-click the main product/design image, choose Copy Image Address, then paste that URL into Manual product import above.</p>
+          <a href="https://www.redbubble.com/people/InkWanderStudio/shop" target="_blank" rel="noopener noreferrer" className="secondary-link small">Open InkWanderStudio shop</a>
+        </div>
+
+        <form action={csvRedbubbleProductsAction} className="product-form admin-section">
+          <h2>CSV bulk import</h2>
+          <p className="admin-muted">Columns: title, product_url, image_url, product_type, niche, tags. Valid rows become Ready products; invalid rows and duplicates are skipped.</p>
+          <label className="field"><span>CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,product_url,image_url,product_type,niche,tags\nFinancially Flexible Morally Exhausted,https://www.redbubble.com/i/sticker/Financially-Flexible-Morally-Exhausted-by-InkWanderStudio/181480283/7sgk,https://ih1.redbubble.net/image...,Sticker,millennial humor,"adulting, relatable stickers"'} /></label>
+          <button type="submit" className="primary-link">Import CSV products</button>
+        </form>
+
         <form action={importRedbubbleProductAction} className="product-form admin-section">
-          <h2>Import one Redbubble product URL</h2>
-          <p className="admin-muted">Paste a specific product/design page. Shop/profile URLs like https://www.redbubble.com/people/InkWanderStudio/ are rejected because they do not identify one design image.</p>
+          <h2>Try automatic single-product extraction</h2>
+          <p className="admin-muted">Optional. If Redbubble returns 403, the app will ask you to paste the image URL manually.</p>
           <label className="field"><span>Specific product URL</span><input name="product_url" placeholder="https://www.redbubble.com/i/sticker/..." /></label>
-          <button type="submit" className="primary-link">Import and extract image</button>
+          <button type="submit" className="primary-link">Try automatic extraction</button>
         </form>
 
         <form action={createProductAction} className="product-form admin-section">
-          <h2>Add product manually</h2>
+          <h2>Add product manually legacy</h2>
           <p className="admin-muted">Manual products must use a specific Redbubble product URL. Missing images are allowed for repair, but Product Pins will not generate until the image URL is present.</p>
           <div className="field-row">
             <label className="field"><span>Title</span><input name="title" placeholder="Minimalist Side Hustle Sticker" /></label>
