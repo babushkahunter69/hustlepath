@@ -133,7 +133,7 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       if (text.startsWith('/')) return new URL(text, location.origin).toString();
       return text;
     };
-    const uniqueBy = <T,>(items: T[], keyFn: (item: T) => string) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
+    const uniqueBy = (items: any[], keyFn: (item: any) => string) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
     const srcsetUrls = (srcset: unknown) => clean(srcset)
       .split(',')
       .map((part) => normalizeUrl(clean(part).split(/\s+/)[0]))
@@ -208,43 +208,46 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       return uniqueBy(urls.filter(Boolean), (url) => url);
     };
     const links = uniqueBy(
-      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      Array.from(document.querySelectorAll('a[href]'))
         .map((link) => {
-          const href = normalizeUrl(link.getAttribute('href') || link.href);
+          const anchor = link as HTMLAnchorElement;
+          const href = normalizeUrl(anchor.getAttribute('href') || anchor.href);
           if (!href.includes('/i/')) return null;
-          const rect = visibleRect(link);
+          const rect = visibleRect(anchor);
           if (!rect) return null;
           return {
-            element: link,
+            element: anchor,
             productUrl: href,
             rect,
-            tile: tileFor(link),
-            text: clean(link.textContent),
+            tile: tileFor(anchor),
+            text: clean(anchor.textContent),
           };
         })
-        .filter(Boolean) as Array<{ element: HTMLAnchorElement; productUrl: string; rect: DOMRect; tile: Element | null; text: string }>,
+        .filter(Boolean),
       (item) => item.productUrl
     );
 
-    const largeImages = Array.from(document.querySelectorAll<HTMLImageElement>('img'))
+    const largeImages = Array.from(document.querySelectorAll('img'))
       .map((img) => {
-        const rect = largeVisibleRect(img);
+        const image = img as HTMLImageElement;
+        const rect = largeVisibleRect(image);
         if (!rect) return null;
-        const urls = imageCandidatesFor(img);
+        const urls = imageCandidatesFor(image);
         const acceptedUrl = urls.find((url) => !isBadImageUrl(url) && (url.startsWith('http://') || url.startsWith('https://'))) || '';
         return {
-          element: img,
+          element: image,
           rect,
           urls,
           acceptedUrl,
-          tile: tileFor(img),
-          alt: clean(img.getAttribute('alt')),
+          tile: tileFor(image),
+          alt: clean(image.getAttribute('alt')),
         };
       })
-      .filter(Boolean) as Array<{ element: HTMLImageElement; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string }>;
+      .filter(Boolean);
 
-    const backgroundBlocks = Array.from(document.querySelectorAll<HTMLElement>('article, li, section, div'))
-      .map((el) => {
+    const backgroundBlocks = Array.from(document.querySelectorAll('article, li, section, div'))
+      .map((node) => {
+        const el = node as HTMLElement;
         const rect = largeVisibleRect(el);
         if (!rect) return null;
         const urls = uniqueBy([
@@ -262,12 +265,12 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           alt: '',
         };
       })
-      .filter(Boolean) as Array<{ element: HTMLElement; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string }>;
+      .filter(Boolean);
 
     const visibleLargeImageCandidates = largeImages.map((item) => ({ url: item.acceptedUrl || item.urls[0] || '', width: item.rect.width, height: item.rect.height }));
     const productImages = uniqueBy(
       [...largeImages, ...backgroundBlocks]
-        .filter((item) => item.acceptedUrl)
+        .filter((item) => item && item.acceptedUrl)
         .map((item) => ({
           imageUrl: item.acceptedUrl,
           rect: item.rect,
@@ -311,7 +314,7 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           source_shop: sourceShop,
         };
       })
-      .filter((item): item is ProductRow => Boolean(item));
+      .filter(Boolean) as ProductRow[];
 
     const uniqueRows = uniqueBy(rows, (row) => row.product_url);
 
