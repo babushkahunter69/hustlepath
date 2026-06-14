@@ -3,6 +3,8 @@ const DEFAULT_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop'
 const SHOP_PROFILE_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+(?:\/shop)?\/?(?:[?#].*)?$/i;
 const SHOP_URL_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+\/shop\/?(?:[?#].*)?$/i;
 const REDBUBBLE_HOST_RE = /(^|\.)redbubble\.com$/i;
+const PRODUCT_IMAGE_HOST_RE = /^ih[01]\.redbubble\.net$/i;
+const UI_ASSET_RE = /\/boom\/client\/|\.svg(\?|#|$)|avatar|logo|icon|heart|favorite|placeholder|sprite/i;
 
 export type ProductValidationStatus = 'ready' | 'missing_image' | 'invalid';
 
@@ -78,12 +80,34 @@ export function isRedbubbleProductUrl(value: unknown) {
   }
 }
 
+export function redbubbleImageInvalidReason(value: unknown) {
+  const imageUrl = cleanText(value);
+  if (!imageUrl) return 'missing';
+  if (!isAbsoluteHttpUrl(imageUrl)) return 'not-absolute';
+  if (UI_ASSET_RE.test(imageUrl)) return 'internal-redbubble-ui-asset';
+
+  try {
+    const url = new URL(imageUrl);
+    if (!PRODUCT_IMAGE_HOST_RE.test(url.hostname)) return 'not-redbubble-product-cdn';
+    if (!url.pathname.includes('/image.')) return 'missing-image-path';
+    if (!/\.(png|jpe?g|webp)$/i.test(url.pathname)) return 'unsupported-extension';
+    return '';
+  } catch {
+    return 'not-absolute';
+  }
+}
+
+export function isRedbubbleProductImageUrl(value: unknown) {
+  return !redbubbleImageInvalidReason(value);
+}
+
 export function validateProductSource(product: { target_url?: unknown; image_url?: unknown }): ProductValidation {
   const targetUrl = cleanText(product.target_url);
   const imageUrl = cleanText(product.image_url);
   const hasAbsoluteTargetUrl = isAbsoluteHttpUrl(targetUrl);
   const hasAbsoluteImageUrl = isAbsoluteHttpUrl(imageUrl);
   const isShopProfileUrl = isRedbubbleShopProfileUrl(targetUrl);
+  const imageReason = redbubbleImageInvalidReason(imageUrl);
 
   if (!hasAbsoluteTargetUrl) {
     return {
@@ -107,7 +131,7 @@ export function validateProductSource(product: { target_url?: unknown; image_url
     };
   }
 
-  if (!hasAbsoluteImageUrl) {
+  if (!hasAbsoluteImageUrl || imageReason === 'missing') {
     return {
       status: 'missing_image',
       label: 'Missing image',
@@ -118,10 +142,32 @@ export function validateProductSource(product: { target_url?: unknown; image_url
     };
   }
 
+  if (imageReason === 'internal-redbubble-ui-asset') {
+    return {
+      status: 'invalid',
+      label: 'Invalid',
+      reason: 'This product has a Redbubble UI asset instead of a product image. Re-import with the fixed browser capture script.',
+      hasAbsoluteTargetUrl,
+      hasAbsoluteImageUrl,
+      isShopProfileUrl,
+    };
+  }
+
+  if (imageReason) {
+    return {
+      status: 'invalid',
+      label: 'Invalid',
+      reason: 'image_url must be an ih0.redbubble.net or ih1.redbubble.net product image URL that contains /image. and is not a UI asset.',
+      hasAbsoluteTargetUrl,
+      hasAbsoluteImageUrl,
+      isShopProfileUrl,
+    };
+  }
+
   return {
     status: 'ready',
     label: 'Ready',
-    reason: 'Product has a specific target URL and absolute image URL.',
+    reason: 'Product has a specific target URL and usable Redbubble product image URL.',
     hasAbsoluteTargetUrl,
     hasAbsoluteImageUrl,
     isShopProfileUrl,
@@ -177,7 +223,7 @@ function imageFromHtml(html: string, pageUrl: string) {
     metaContent(html, 'og:image:secure_url') ||
     metaContent(html, 'og:image') ||
     metaContent(html, 'twitter:image', 'name') ||
-    html.match(/https:\/\/[^"'\s<>]+(?:ih\d?\.redbubble\.net|redbubble)[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i)?.[0] ||
+    html.match(/https:\/\/ih[01]\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i)?.[0] ||
     '';
 
   try {
@@ -304,7 +350,7 @@ export async function importRedbubbleProduct(productUrl: string, sourceShopName 
     const tags = Array.from(new Set([...tagsFromText(title, description, productType), sourceShopName])).slice(0, 8);
 
     return {
-      ok: Boolean(title && imageUrl && isRedbubbleProductUrl(resolvedTargetUrl)),
+      ok: Boolean(title && imageUrl && isRedbubbleProductUrl(resolvedTargetUrl) && isRedbubbleProductImageUrl(imageUrl)),
       title,
       description,
       targetUrl: resolvedTargetUrl,
