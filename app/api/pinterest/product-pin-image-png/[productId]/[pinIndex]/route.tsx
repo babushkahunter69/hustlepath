@@ -397,7 +397,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     >
       <TopBar theme={theme} niche={niche} />
       <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} theme={theme} />
-      <BottomCopy title={headline} caption={caption} tags={tags} />
+      <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     {
       width: PIN_WIDTH,
