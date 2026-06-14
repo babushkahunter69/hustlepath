@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { parseKeywords } from '@/lib/monetization';
-import { pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
+import { pinterestProductImageDebugSummary, pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
 import { sql } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -378,7 +378,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const tags = keywordTags(pin, product);
   const productImage = await resolvePinterestProductImage(product);
 
-  console.info('Pinterest product pin image source', productImage);
+  console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
   return new ImageResponse(
     <div
@@ -397,7 +397,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     >
       <TopBar theme={theme} niche={niche} />
       <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} theme={theme} />
-      <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
+      <BottomCopy title={headline} caption={caption} tags={tags} />
     </div>,
     {
       width: PIN_WIDTH,
