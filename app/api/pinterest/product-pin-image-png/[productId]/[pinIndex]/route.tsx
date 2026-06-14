@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { parseKeywords } from '@/lib/monetization';
+import { pinterestProductImageHeaders, resolvePinterestProductImage } from '@/lib/pinterestProductImage';
 import { sql } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -8,21 +9,12 @@ export const contentType = 'image/png';
 
 const PIN_WIDTH = 1000;
 const PIN_HEIGHT = 1500;
-const MAX_REMOTE_IMAGE_BYTES = 6_500_000;
-const FETCH_TIMEOUT_MS = 8000;
-const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 type Theme = ReturnType<typeof themeFor>;
 
 type WrappedText = {
   lines: string[];
   truncated: boolean;
-};
-
-type ProductImageResult = {
-  dataUrl: string | null;
-  sourceUrl: string;
-  status: string;
 };
 
 function getPin(meta: any, index: number) {
@@ -198,153 +190,6 @@ function keywordTags(pin: any, product: any) {
 
   const fallback = [nicheLabel(pin, product), 'Sticker Idea', 'Giftable Art'];
   return Array.from(new Set([...tags, ...fallback])).slice(0, 3);
-}
-
-function imageDataToBase64(bytes: Uint8Array) {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function sniffImageType(bytes: Uint8Array, declaredType: string) {
-  if (SUPPORTED_IMAGE_TYPES.has(declaredType)) return declaredType === 'image/jpg' ? 'image/jpeg' : declaredType;
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
-  return '';
-}
-
-function absolutizeUrl(value: string, baseUrl: string) {
-  try {
-    return new URL(value, baseUrl).toString();
-  } catch {
-    return '';
-  }
-}
-
-function extractMetaImageUrl(html: string, pageUrl: string) {
-  const patterns = [
-    /<meta[^>]+property=["']og:image:secure_url["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
-  }
-
-  const cdnMatch = html.match(/https:\/\/[^"'\s<>]+(?:redbubble|rb\.gy|ih\d?\.redbubble\.net)[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
-  return cdnMatch?.[0]?.replaceAll('&amp;', '&') || '';
-}
-
-async function fetchRedbubblePageImageUrl(pageUrl?: string | null) {
-  const source = cleanText(pageUrl);
-  if (!source || !/^https?:\/\//i.test(source)) return '';
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-  try {
-    const controller = new AbortController();
-    timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const response = await fetch(source, {
-      signal: controller.signal,
-      headers: {
-        accept: 'text/html,application/xhtml+xml',
-        'accept-language': 'en-US,en;q=0.9',
-        'user-agent': 'Mozilla/5.0 (compatible; HustlePathPinterestBot/1.0; +https://hustlepathdaily.com)',
-      },
-      cache: 'no-store',
-    });
-
-    if (!response.ok) return '';
-    const html = await response.text();
-    return extractMetaImageUrl(html, source);
-  } catch {
-    return '';
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
-async function fetchImageDataUrlFromSource(imageUrl: string): Promise<ProductImageResult> {
-  const source = cleanText(imageUrl);
-  if (!source || !/^https?:\/\//i.test(source)) return { dataUrl: null, sourceUrl: source, status: 'missing-or-invalid-url' };
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-  try {
-    const controller = new AbortController();
-    timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const response = await fetch(source, {
-      signal: controller.signal,
-      headers: {
-        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.8,*/*;q=0.5',
-        'accept-language': 'en-US,en;q=0.9',
-        referer: 'https://www.redbubble.com/',
-        'user-agent': 'Mozilla/5.0 (compatible; HustlePathPinterestBot/1.0; +https://hustlepathdaily.com)',
-      },
-      cache: 'no-store',
-    });
-
-    if (!response.ok) return { dataUrl: null, sourceUrl: source, status: `http-${response.status}` };
-
-    const declaredLength = Number(response.headers.get('content-length') || 0);
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_IMAGE_BYTES) return { dataUrl: null, sourceUrl: source, status: 'too-large-header' };
-
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.byteLength) return { dataUrl: null, sourceUrl: source, status: 'empty-image' };
-    if (bytes.byteLength > MAX_REMOTE_IMAGE_BYTES) return { dataUrl: null, sourceUrl: source, status: 'too-large-body' };
-
-    const declaredType = cleanText(response.headers.get('content-type')).split(';')[0].toLowerCase();
-    const contentType = sniffImageType(bytes, declaredType);
-    if (!contentType) return { dataUrl: null, sourceUrl: source, status: `unsupported-${declaredType || 'unknown'}` };
-
-    return { dataUrl: `data:${contentType};base64,${imageDataToBase64(bytes)}`, sourceUrl: source, status: 'ok' };
-  } catch (error: any) {
-    return { dataUrl: null, sourceUrl: source, status: error?.name === 'AbortError' ? 'timeout' : 'fetch-error' };
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
-async function resolveProductImage(product: any): Promise<ProductImageResult> {
-  const explicitImageUrl = cleanText(product?.image_url);
-  const targetUrl = cleanText(product?.target_url);
-  const candidates: string[] = [];
-
-  if (/^https?:\/\//i.test(explicitImageUrl)) candidates.push(explicitImageUrl);
-  if (/^https?:\/\//i.test(targetUrl) && !/\.(png|jpe?g|webp)(\?|$)/i.test(targetUrl)) {
-    const scrapedImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
-    if (scrapedImageUrl) candidates.push(scrapedImageUrl);
-  } else if (/^https?:\/\//i.test(targetUrl)) {
-    candidates.push(targetUrl);
-  }
-
-  const seen = new Set<string>();
-  const uniqueCandidates = candidates.filter((candidate) => {
-    if (seen.has(candidate)) return false;
-    seen.add(candidate);
-    return true;
-  });
-
-  for (const candidate of uniqueCandidates) {
-    const result = await fetchImageDataUrlFromSource(candidate);
-    if (result.dataUrl) return result;
-    console.info('Pinterest product image fetch failed', {
-      productId: product?.id,
-      productImageUrl: explicitImageUrl || null,
-      productTargetUrl: targetUrl || null,
-      attemptedUrl: candidate,
-      status: result.status,
-    });
-  }
-
-  return { dataUrl: null, sourceUrl: uniqueCandidates[0] || explicitImageUrl || targetUrl || '', status: uniqueCandidates.length ? 'all-candidates-failed' : 'no-image-candidates' };
 }
 
 function NotFoundImage({ message }: { message: string }) {
@@ -531,16 +376,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const headline = headlineFor(pin, product);
   const caption = captionFor(pin, product);
   const tags = keywordTags(pin, product);
-  const productImage = await resolveProductImage(product);
+  const productImage = await resolvePinterestProductImage(product);
 
-  console.info('Pinterest product pin image source', {
-    productId: product.id,
-    productImageUrl: cleanText(product.image_url) || null,
-    productTargetUrl: cleanText(product.target_url) || null,
-    resolvedImageUrl: productImage.sourceUrl || null,
-    imageStatus: productImage.status,
-    hasImage: Boolean(productImage.dataUrl),
-  });
+  console.info('Pinterest product pin image source', productImage);
 
   return new ImageResponse(
     <div
@@ -564,11 +402,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     {
       width: PIN_WIDTH,
       height: PIN_HEIGHT,
-      headers: {
-        'Cache-Control': 'no-store, max-age=0',
-        'X-Product-Image-Status': productImage.status,
-        'X-Product-Image-Source': productImage.sourceUrl.slice(0, 240),
-      },
+      headers: pinterestProductImageHeaders(productImage),
     }
   );
 }
