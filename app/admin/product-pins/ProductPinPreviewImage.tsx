@@ -32,7 +32,7 @@ export default function ProductPinPreviewImage({ src, title, niche, description 
   const [failed, setFailed] = useState(false);
   const previewTitle = shortText(title, 58) || 'InkWanderStudio Pinterest Pin';
   const previewNiche = shortText(niche, 34) || 'Relatable sticker';
-  const previewDescription = shortText(description, 120) || 'A complete generated Pinterest pin preview will render from the local image route.';
+  const previewDescription = shortText(description, 120) || 'A complete Pinterest product pin preview will render from the generated image route.';
 
   if (failed) {
     return (
@@ -60,14 +60,18 @@ export default function ProductPinPreviewImage({ src, title, niche, description 
           </span>
         </div>
 
+        <div style={{ minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 110, height: 110, borderRadius: 24, background: '#fffaf3', border: '4px solid #17211b', transform: 'rotate(-5deg)', boxShadow: '0 16px 24px rgba(23, 33, 27, 0.16)' }} />
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <strong style={{ fontSize: 24, lineHeight: 1.05, textTransform: 'uppercase' }}>{previewTitle}</strong>
+          <strong style={{ fontSize: 22, lineHeight: 1.05, textTransform: 'uppercase' }}>{previewTitle}</strong>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.35 }}>{previewDescription}</p>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: '#b6422e' }}>LOCAL IMAGE ROUTE</span>
-          <span style={{ borderRadius: 999, background: '#d94b32', color: '#fff', padding: '7px 10px', fontSize: 11, fontWeight: 900 }}>Open image</span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: '#b6422e' }}>PINTEREST PIN</span>
+          <span style={{ borderRadius: 999, background: '#d94b32', color: '#fff', padding: '7px 10px', fontSize: 11, fontWeight: 900 }}>View design</span>
         </div>
       </div>
     );
