@@ -262,7 +262,6 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
   console.log('Accepted product images:', productImages.length, productImages.map((item) => item.imageUrl));
   console.log('Rejected images with reason:', rejectedImages);
   console.log('Paired rows:', captured);
-  console.log('First 20 image URLs:', allMedia.flatMap((el) => imageCandidates(el)).slice(0, 20));
   console.log('First 10 product URLs:', productLinks.slice(0, 10).map((item) => item.productUrl));
   console.table(captured);
 
@@ -756,8 +755,19 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
         </form>
 
         <div className="product-form admin-section">
-          <h2>Browser-assisted paginated capture</h2>
-          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet now finds large visible rendered product images first, reads URLs from image elements and background images, and pairs them to nearby visible product links by screen position in mobile view.</p>
+          <h2>Playwright scraper (recommended)</h2>
+          <p className="admin-muted">Run the local Playwright scraper to generate <code>redbubble-products.json</code> and <code>redbubble-products.csv</code>, then import the CSV below. This avoids the fragile browser-console workflow and does not rely on Vercel fetching Redbubble.</p>
+          <ol className="admin-muted">
+            <li>Install dependencies and Chromium locally.</li>
+            <li>Run <code>npm run scrape:redbubble</code>.</li>
+            <li>Wait for the scraper to crawl shop pages and write <code>redbubble-products.csv</code>.</li>
+            <li>Import that CSV in the CSV bulk import section below.</li>
+          </ol>
+        </div>
+
+        <div className="product-form admin-section">
+          <h2>Advanced browser-assisted capture (fallback)</h2>
+          <p className="admin-muted">Use this only if you cannot run the Playwright scraper locally. The console snippet remains available as an advanced fallback, but the recommended path is <code>npm run scrape:redbubble</code> followed by CSV import.</p>
           <ol className="admin-muted">
             <li>Open Redbubble shop page 1.</li>
             <li>Run the capture products snippet in the browser console.</li>
@@ -799,7 +809,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={csvRedbubbleProductsAction} className="product-form admin-section">
           <h2>CSV bulk import</h2>
-          <p className="admin-muted">Columns: title, product_url, image_url, product_type, niche, tags. Valid rows become Ready products; invalid rows and duplicates are skipped.</p>
+          <p className="admin-muted">Recommended: run <code>npm run scrape:redbubble</code> locally, then import the generated <code>redbubble-products.csv</code> here. Columns: title, product_url, image_url, product_type, niche, tags. Valid rows become Ready products; invalid rows and duplicates are skipped.</p>
           <label className="field"><span>CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,product_url,image_url,product_type,niche,tags\nFinancially Flexible Morally Exhausted,https://www.redbubble.com/i/sticker/Financially-Flexible-Morally-Exhausted-by-InkWanderStudio/181480283/7sgk,https://ih1.redbubble.net/image...,Sticker,millennial humor,"adulting, relatable stickers"'} /></label>
           <button type="submit" className="primary-link">Import CSV products</button>
         </form>
