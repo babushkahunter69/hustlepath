@@ -1,5 +1,7 @@
 const FETCH_TIMEOUT_MS = 9000;
-const SHOP_PROFILE_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+\/?(?:[?#].*)?$/i;
+const DEFAULT_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
+const SHOP_PROFILE_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+(?:\/shop)?\/?(?:[?#].*)?$/i;
+const SHOP_URL_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+\/shop\/?(?:[?#].*)?$/i;
 const REDBUBBLE_HOST_RE = /(^|\.)redbubble\.com$/i;
 
 export type ProductValidationStatus = 'ready' | 'missing_image' | 'invalid';
@@ -21,7 +23,17 @@ export type RedbubbleImportResult = {
   imageUrl: string;
   productType: string;
   tags: string[];
+  sourceShopName?: string;
   error?: string;
+};
+
+export type RedbubbleShopImportResult = {
+  ok: boolean;
+  shopUrl: string;
+  shopName: string;
+  discoveredUrls: string[];
+  products: RedbubbleImportResult[];
+  errors: string[];
 };
 
 function cleanText(value: unknown, fallback = '') {
@@ -30,6 +42,8 @@ function cleanText(value: unknown, fallback = '') {
 
 function decodeHtml(value: string) {
   return value
+    .replace(/\\u002F/g, '/')
+    .replace(/\\\//g, '/')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
@@ -46,6 +60,10 @@ export function isRedbubbleShopProfileUrl(value: unknown) {
   return SHOP_PROFILE_RE.test(cleanText(value));
 }
 
+export function isRedbubbleShopUrl(value: unknown) {
+  return SHOP_URL_RE.test(cleanText(value));
+}
+
 export function isRedbubbleProductUrl(value: unknown) {
   const raw = cleanText(value);
   if (!isAbsoluteHttpUrl(raw) || isRedbubbleShopProfileUrl(raw)) return false;
@@ -54,7 +72,7 @@ export function isRedbubbleProductUrl(value: unknown) {
     const url = new URL(raw);
     if (!REDBUBBLE_HOST_RE.test(url.hostname)) return false;
     const parts = url.pathname.split('/').filter(Boolean);
-    return parts.includes('i') || parts.includes('shop') || parts.some((part) => /-by-/i.test(part));
+    return parts.includes('i') || parts.some((part) => /-by-/i.test(part));
   } catch {
     return false;
   }
@@ -127,6 +145,17 @@ function canonicalUrl(html: string, fallbackUrl: string) {
   }
 }
 
+function canonicalProductUrl(value: string, baseUrl = DEFAULT_SHOP_URL) {
+  try {
+    const url = new URL(decodeHtml(value), baseUrl);
+    url.hash = '';
+    url.search = '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 function titleFromHtml(html: string) {
   return cleanText(
     metaContent(html, 'og:title') ||
@@ -177,27 +206,23 @@ function tagsFromText(title: string, description: string, productType: string) {
   return Array.from(tags).slice(0, 8);
 }
 
-export async function importRedbubbleProduct(productUrl: string): Promise<RedbubbleImportResult> {
-  const targetUrl = cleanText(productUrl);
-  if (!isRedbubbleProductUrl(targetUrl)) {
-    return {
-      ok: false,
-      title: '',
-      description: '',
-      targetUrl,
-      imageUrl: '',
-      productType: '',
-      tags: [],
-      error: 'Enter a specific Redbubble product/design URL, not a shop or profile URL.',
-    };
+function shopNameFromUrl(shopUrl: string) {
+  try {
+    const parts = new URL(shopUrl).pathname.split('/').filter(Boolean);
+    const peopleIndex = parts.findIndex((part) => part.toLowerCase() === 'people');
+    return peopleIndex >= 0 ? decodeURIComponent(parts[peopleIndex + 1] || 'InkWanderStudio') : 'InkWanderStudio';
+  } catch {
+    return 'InkWanderStudio';
   }
+}
 
+async function fetchRedbubbleHtml(url: string) {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const controller = new AbortController();
     timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const response = await fetch(targetUrl, {
+    const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -208,6 +233,49 @@ export async function importRedbubbleProduct(productUrl: string): Promise<Redbub
       cache: 'no-store',
     });
 
+    if (!response.ok) return { ok: false, status: response.status, html: '' };
+    return { ok: true, status: response.status, html: await response.text() };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function discoverProductUrlsFromShopHtml(html: string, shopUrl: string) {
+  const urls = new Set<string>();
+  const decodedHtml = decodeHtml(html);
+  const hrefPattern = /href=["']([^"']+)["']/gi;
+  const absolutePattern = /https:\/\/(?:www\.)?redbubble\.com\/i\/[^"'\s<>\\]+/gi;
+  const pathPattern = /\/i\/[^"'\s<>\\]+/gi;
+
+  for (const pattern of [hrefPattern, absolutePattern, pathPattern]) {
+    for (const match of decodedHtml.matchAll(pattern)) {
+      const candidate = match[1] || match[0];
+      const productUrl = canonicalProductUrl(candidate, shopUrl);
+      if (isRedbubbleProductUrl(productUrl)) urls.add(productUrl);
+    }
+  }
+
+  return Array.from(urls).slice(0, 36);
+}
+
+export async function importRedbubbleProduct(productUrl: string, sourceShopName = 'InkWanderStudio'): Promise<RedbubbleImportResult> {
+  const targetUrl = canonicalProductUrl(cleanText(productUrl));
+  if (!isRedbubbleProductUrl(targetUrl)) {
+    return {
+      ok: false,
+      title: '',
+      description: '',
+      targetUrl,
+      imageUrl: '',
+      productType: '',
+      tags: [],
+      sourceShopName,
+      error: 'Enter a specific Redbubble product/design URL, not a shop or profile URL.',
+    };
+  }
+
+  try {
+    const response = await fetchRedbubbleHtml(targetUrl);
     if (!response.ok) {
       return {
         ok: false,
@@ -217,26 +285,28 @@ export async function importRedbubbleProduct(productUrl: string): Promise<Redbub
         imageUrl: '',
         productType: '',
         tags: [],
+        sourceShopName,
         error: `Redbubble returned HTTP ${response.status}.`,
       };
     }
 
-    const html = await response.text();
-    const resolvedTargetUrl = canonicalUrl(html, targetUrl);
+    const html = response.html;
+    const resolvedTargetUrl = canonicalProductUrl(canonicalUrl(html, targetUrl), targetUrl);
     const title = titleFromHtml(html);
     const description = cleanText(metaContent(html, 'og:description') || metaContent(html, 'description', 'name')).slice(0, 360);
     const imageUrl = imageFromHtml(html, resolvedTargetUrl);
     const productType = productTypeFromUrlOrTitle(resolvedTargetUrl, title);
-    const tags = tagsFromText(title, description, productType);
+    const tags = Array.from(new Set([...tagsFromText(title, description, productType), sourceShopName])).slice(0, 8);
 
     return {
-      ok: Boolean(title && imageUrl),
+      ok: Boolean(title && imageUrl && isRedbubbleProductUrl(resolvedTargetUrl)),
       title,
       description,
       targetUrl: resolvedTargetUrl,
       imageUrl,
       productType,
       tags,
+      sourceShopName,
       error: title && imageUrl ? undefined : 'Could not extract a title and main product image from this Redbubble page.',
     };
   } catch (error: any) {
@@ -248,9 +318,69 @@ export async function importRedbubbleProduct(productUrl: string): Promise<Redbub
       imageUrl: '',
       productType: '',
       tags: [],
+      sourceShopName,
       error: error?.name === 'AbortError' ? 'Timed out fetching the Redbubble product page.' : error?.message || 'Failed to fetch Redbubble product page.',
     };
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+export async function importRedbubbleShopProducts(shopUrl = DEFAULT_SHOP_URL): Promise<RedbubbleShopImportResult> {
+  const normalizedShopUrl = cleanText(shopUrl) || DEFAULT_SHOP_URL;
+  const shopName = shopNameFromUrl(normalizedShopUrl);
+
+  if (!isRedbubbleShopUrl(normalizedShopUrl)) {
+    return {
+      ok: false,
+      shopUrl: normalizedShopUrl,
+      shopName,
+      discoveredUrls: [],
+      products: [],
+      errors: ['Enter the InkWanderStudio Redbubble shop URL, not a profile-only URL.'],
+    };
+  }
+
+  try {
+    const response = await fetchRedbubbleHtml(normalizedShopUrl);
+    if (!response.ok) {
+      return {
+        ok: false,
+        shopUrl: normalizedShopUrl,
+        shopName,
+        discoveredUrls: [],
+        products: [],
+        errors: [`Redbubble shop returned HTTP ${response.status}.`],
+      };
+    }
+
+    const discoveredUrls = discoverProductUrlsFromShopHtml(response.html, normalizedShopUrl);
+    const products: RedbubbleImportResult[] = [];
+    const errors: string[] = [];
+
+    for (const productUrl of discoveredUrls.slice(0, 24)) {
+      const imported = await importRedbubbleProduct(productUrl, shopName);
+      if (imported.ok && validateProductSource({ target_url: imported.targetUrl, image_url: imported.imageUrl }).status === 'ready') {
+        products.push(imported);
+      } else {
+        errors.push(`${productUrl}: ${imported.error || 'missing image or invalid product URL'}`);
+      }
+    }
+
+    return {
+      ok: products.length > 0,
+      shopUrl: normalizedShopUrl,
+      shopName,
+      discoveredUrls,
+      products,
+      errors,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      shopUrl: normalizedShopUrl,
+      shopName,
+      discoveredUrls: [],
+      products: [],
+      errors: [error?.message || 'Failed to fetch Redbubble shop page.'],
+    };
   }
 }
