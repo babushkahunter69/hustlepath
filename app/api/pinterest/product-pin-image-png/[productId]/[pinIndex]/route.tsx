@@ -8,8 +8,8 @@ export const contentType = 'image/png';
 
 const PIN_WIDTH = 1000;
 const PIN_HEIGHT = 1500;
-const MAX_REMOTE_IMAGE_BYTES = 4_500_000;
-const FETCH_TIMEOUT_MS = 4500;
+const MAX_REMOTE_IMAGE_BYTES = 5_500_000;
+const FETCH_TIMEOUT_MS = 6500;
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 type Theme = ReturnType<typeof themeFor>;
@@ -92,10 +92,10 @@ function clampSentence(value: string, maxChars: number) {
 
 function themeFor(index: number) {
   const themes = [
-    { page: '#f8f1e8', card: '#fffdf8', ink: '#161616', accent: '#d8482f', chip: '#ffe1d4', soft: '#f4c7a5' },
-    { page: '#eef5f2', card: '#ffffff', ink: '#172821', accent: '#217c67', chip: '#d7eee6', soft: '#b9ddd1' },
-    { page: '#f4f2fb', card: '#ffffff', ink: '#251b35', accent: '#7c3aed', chip: '#e7ddff', soft: '#d8cbf5' },
-    { page: '#f3f6ee', card: '#ffffff', ink: '#202411', accent: '#607b28', chip: '#e2ecc8', soft: '#cbdba3' },
+    { page: '#f7efe5', card: '#fffdf8', ink: '#161616', accent: '#d8482f', chip: '#ffe1d4', soft: '#f4c7a5', shadow: '#c67a5a' },
+    { page: '#eef5f2', card: '#ffffff', ink: '#172821', accent: '#217c67', chip: '#d7eee6', soft: '#b9ddd1', shadow: '#84b8a6' },
+    { page: '#f3f0f7', card: '#ffffff', ink: '#241b30', accent: '#6d4d9a', chip: '#e9ddf8', soft: '#d7caea', shadow: '#a18ac2' },
+    { page: '#f3f6ee', card: '#ffffff', ink: '#202411', accent: '#607b28', chip: '#e2ecc8', soft: '#cbdba3', shadow: '#9eb26e' },
   ];
   return themes[Math.abs(index) % themes.length];
 }
@@ -115,7 +115,7 @@ function designName(pin: any, product: any) {
   const raw = fromPin || fromProduct;
   return titleCase(
     raw
-      .replace(/\b(redbubble|stickers?|shirts?|tees?|mugs?|gifts?)\b/gi, ' ')
+      .replace(/\b(redbubble|stickers?|shirts?|tees?|mugs?|gifts?|designs?|prints?)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim() || fromProduct
   );
@@ -152,7 +152,7 @@ function captionFor(pin: any, product: any) {
   const raw = cleanText(pin?.description);
   const generic = !raw || /unique redbubble|trending redbubble|perfect gifts|seasonal gift ideas|category pin/i.test(raw);
 
-  if (!generic) return clampSentence(raw, 150);
+  if (!generic) return clampSentence(raw, 132);
   if (niche.includes('coffee')) return `${design} brings coffee culture humor to stickers, mugs, laptops, and cozy desk setups.`;
   if (niche.includes('introvert')) return `${design} is a relatable introvert humor design for laptops, notebooks, mugs, and quiet-day gifts.`;
   if (niche.includes('millennial')) return `${design} turns millennial humor into a specific Redbubble design worth saving for later.`;
@@ -163,7 +163,7 @@ function captionFor(pin: any, product: any) {
 function keywordTags(pin: any, product: any) {
   const raw = Array.isArray(pin?.keyword_focus) ? pin.keyword_focus : parseKeywords(product?.keywords);
   const tags = raw
-    .map((value: unknown) => titleCase(clampSentence(value as string, 22)))
+    .map((value: unknown) => titleCase(clampSentence(value as string, 20)))
     .filter(Boolean)
     .filter((tag: string) => !/redbubble design/i.test(tag));
 
@@ -180,6 +180,14 @@ function imageDataToBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+function sniffImageType(bytes: Uint8Array, declaredType: string) {
+  if (SUPPORTED_IMAGE_TYPES.has(declaredType)) return declaredType === 'image/jpg' ? 'image/jpeg' : declaredType;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+  return '';
+}
+
 async function fetchProductImageDataUrl(imageUrl?: string | null) {
   const source = cleanText(imageUrl);
   if (!source || !/^https?:\/\//i.test(source)) return null;
@@ -192,21 +200,24 @@ async function fetchProductImageDataUrl(imageUrl?: string | null) {
     const response = await fetch(source, {
       signal: controller.signal,
       headers: {
-        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.8',
+        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.8,*/*;q=0.5',
+        referer: 'https://www.redbubble.com/',
+        'user-agent': 'Mozilla/5.0 (compatible; HustlePathPinterestBot/1.0; +https://hustlepathdaily.com)',
       },
-      cache: 'force-cache',
+      cache: 'no-store',
     });
 
     if (!response.ok) return null;
-
-    const contentType = cleanText(response.headers.get('content-type')).split(';')[0].toLowerCase();
-    if (!SUPPORTED_IMAGE_TYPES.has(contentType)) return null;
 
     const declaredLength = Number(response.headers.get('content-length') || 0);
     if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_IMAGE_BYTES) return null;
 
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (!bytes.byteLength || bytes.byteLength > MAX_REMOTE_IMAGE_BYTES) return null;
+
+    const declaredType = cleanText(response.headers.get('content-type')).split(';')[0].toLowerCase();
+    const contentType = sniffImageType(bytes, declaredType);
+    if (!contentType) return null;
 
     return `data:${contentType};base64,${imageDataToBase64(bytes)}`;
   } catch {
@@ -238,8 +249,8 @@ function NotFoundImage({ message }: { message: string }) {
 
 function TopBar({ theme, niche }: { theme: Theme; niche: string }) {
   return (
-    <div style={{ height: 74, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
-      <div style={{ fontSize: 28, fontWeight: 900, color: theme.ink, letterSpacing: 1 }}>InkWanderStudio</div>
+    <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+      <div style={{ fontSize: 28, fontWeight: 900, color: theme.ink, letterSpacing: 0.5 }}>InkWanderStudio</div>
       <div
         style={{
           display: 'flex',
@@ -260,8 +271,8 @@ function TopBar({ theme, niche }: { theme: Theme; niche: string }) {
   );
 }
 
-function FallbackHero({ title, niche, theme }: { title: string; niche: string; theme: Theme }) {
-  const titleLines = wrapText(title, 16, 3).lines;
+function MockupFallbackHero({ title, niche, theme }: { title: string; niche: string; theme: Theme }) {
+  const titleLines = wrapText(title, 15, 3).lines;
   return (
     <div
       style={{
@@ -270,39 +281,28 @@ function FallbackHero({ title, niche, theme }: { title: string; niche: string; t
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: `linear-gradient(145deg, ${theme.card} 0%, ${theme.soft} 100%)`,
-        padding: 52,
+        background: `linear-gradient(145deg, ${theme.card} 0%, ${theme.chip} 48%, ${theme.soft} 100%)`,
+        padding: 46,
       }}
     >
-      <div
-        style={{
-          width: 650,
-          height: 650,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          background: theme.card,
-          color: theme.ink,
-          border: `6px solid ${theme.ink}`,
-          borderRadius: 34,
-          padding: 44,
-          transform: 'rotate(-3deg)',
-          boxShadow: '0 36px 70px rgba(0,0,0,0.18)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', background: theme.chip, borderRadius: 999, padding: '12px 18px', fontSize: 24, fontWeight: 900 }}>
-          {niche}
+      <div style={{ width: 640, height: 640, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', width: 560, height: 560, borderRadius: 60, background: theme.shadow, opacity: 0.55, transform: 'rotate(8deg)' }} />
+        <div style={{ position: 'absolute', width: 560, height: 560, borderRadius: 60, background: theme.card, border: `7px solid ${theme.ink}`, transform: 'rotate(-4deg)', boxShadow: '0 34px 70px rgba(0,0,0,0.2)' }} />
+        <div style={{ position: 'absolute', top: 36, left: 58, right: 58, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: theme.accent }}>REDBUBBLE</div>
+          <div style={{ fontSize: 20, fontWeight: 800, borderRadius: 999, background: theme.chip, padding: '9px 14px', color: theme.ink }}>{niche}</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ position: 'absolute', width: 330, height: 330, borderRadius: 54, background: `linear-gradient(160deg, ${theme.soft}, ${theme.card})`, border: `10px solid ${theme.ink}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(5deg)' }}>
+          <div style={{ width: 240, height: 240, borderRadius: 999, border: `16px solid ${theme.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 116, height: 116, borderRadius: 30, background: theme.ink, transform: 'rotate(-10deg)' }} />
+          </div>
+        </div>
+        <div style={{ position: 'absolute', left: 58, right: 58, bottom: 46, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {titleLines.map((line, index) => (
-            <div key={`${line}-${index}`} style={{ fontSize: titleLines.length >= 3 ? 72 : 86, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textTransform: 'uppercase' }}>
+            <div key={`${line}-${index}`} style={{ fontSize: titleLines.length >= 3 ? 54 : 64, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textTransform: 'uppercase' }}>
               {line}
             </div>
           ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}>
-          <div style={{ fontSize: 24, fontWeight: 900, color: theme.accent }}>REDBUBBLE DESIGN</div>
-          <div style={{ width: 180, height: 12, background: theme.accent, borderRadius: 999 }} />
         </div>
       </div>
     </div>
@@ -313,7 +313,7 @@ function HeroImage({ imageDataUrl, title, niche, theme }: { imageDataUrl: string
   return (
     <div
       style={{
-        height: 790,
+        height: 835,
         width: '100%',
         display: 'flex',
         alignItems: 'center',
@@ -321,26 +321,26 @@ function HeroImage({ imageDataUrl, title, niche, theme }: { imageDataUrl: string
         overflow: 'hidden',
         background: theme.card,
         border: `5px solid ${theme.ink}`,
-        borderRadius: 30,
+        borderRadius: 28,
         boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
       }}
     >
       {imageDataUrl ? (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(180deg, ${theme.card}, ${theme.chip})`, padding: 34 }}>
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(180deg, ${theme.card}, ${theme.chip})`, padding: 22 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 28px 34px rgba(0,0,0,0.18))' }} />
         </div>
       ) : (
-        <FallbackHero title={title} niche={niche} theme={theme} />
+        <MockupFallbackHero title={title} niche={niche} theme={theme} />
       )}
     </div>
   );
 }
 
 function BottomCopy({ title, caption, tags, theme }: { title: string; caption: string; tags: string[]; theme: Theme }) {
-  const titleWrap = wrapText(title, 19, 3);
-  const descriptionWrap = wrapText(caption, 42, 3);
-  const titleSize = titleWrap.lines.length >= 3 ? 54 : 62;
+  const titleWrap = wrapText(title, 21, 2);
+  const descriptionWrap = wrapText(caption, 44, 2);
+  const titleSize = titleWrap.lines.length >= 2 ? 54 : 62;
 
   return (
     <div
@@ -351,11 +351,11 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
         flexDirection: 'column',
         background: theme.card,
         border: `5px solid ${theme.ink}`,
-        borderRadius: 30,
-        padding: 32,
+        borderRadius: 28,
+        padding: 30,
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 178 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 108 }}>
         {titleWrap.lines.map((line, index) => (
           <div key={`${line}-${index}`} style={{ fontSize: titleSize, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textTransform: 'uppercase' }}>
             {line}
@@ -363,17 +363,17 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
         ))}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minHeight: 108, marginTop: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minHeight: 66, marginTop: 10 }}>
         {descriptionWrap.lines.map((line, index) => (
-          <div key={`${line}-${index}`} style={{ fontSize: 28, lineHeight: 1.2, color: theme.ink }}>
+          <div key={`${line}-${index}`} style={{ fontSize: 27, lineHeight: 1.18, color: theme.ink }}>
             {line}{index === descriptionWrap.lines.length - 1 && descriptionWrap.truncated ? '...' : ''}
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 18, minHeight: 46 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 16, minHeight: 42 }}>
         {tags.map((tag, index) => (
-          <div key={`${tag}-${index}`} style={{ display: 'flex', alignItems: 'center', borderRadius: 999, padding: '9px 15px', background: theme.chip, color: theme.ink, fontSize: 20, fontWeight: 800, whiteSpace: 'nowrap' }}>
+          <div key={`${tag}-${index}`} style={{ display: 'flex', alignItems: 'center', borderRadius: 999, padding: '8px 13px', background: theme.chip, color: theme.ink, fontSize: 19, fontWeight: 800, whiteSpace: 'nowrap' }}>
             {tag}
           </div>
         ))}
@@ -381,11 +381,11 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', gap: 22 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 19, color: theme.accent, fontWeight: 900, letterSpacing: 1 }}>SAVE FOR LATER</div>
-          <div style={{ fontSize: 23, color: theme.ink, fontWeight: 800 }}>Design-specific Redbubble find</div>
+          <div style={{ fontSize: 18, color: theme.accent, fontWeight: 900, letterSpacing: 0.8 }}>SAVE FOR LATER</div>
+          <div style={{ fontSize: 22, color: theme.ink, fontWeight: 800 }}>Design-specific Redbubble find</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, padding: '16px 24px', background: theme.accent, color: '#fff', fontSize: 23, fontWeight: 900, whiteSpace: 'nowrap' }}>
-          Open Design
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, padding: '16px 24px', background: theme.accent, color: '#fff', fontSize: 22, fontWeight: 900, whiteSpace: 'nowrap' }}>
+          View On Redbubble
         </div>
       </div>
     </div>
@@ -425,8 +425,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
         background: theme.page,
         color: theme.ink,
         fontFamily: 'Arial, Helvetica, sans-serif',
-        padding: 44,
-        gap: 18,
+        padding: 34,
+        gap: 14,
         overflow: 'hidden',
       }}
     >
