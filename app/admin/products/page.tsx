@@ -12,14 +12,10 @@ const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStud
 const BROWSER_IMAGE_WARNING_KEYWORD = 'image_server_check:failed';
 const BROWSER_IMAGE_WARNING = 'Image may not be server-fetchable, but was captured from browser.';
 const BAD_BROWSER_TITLES = new Set(['favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio']);
-const PRODUCT_IMAGE_URL_RE = /^https?:\/\/(?:ih\d?\.redbubble\.net|[^/]+\.redbubble\.net)\/.*\.(?:png|jpe?g|webp)(?:[?#].*)?$/i;
-const NON_PRODUCT_IMAGE_RE = /avatar|logo|icon|heart|favorite|placeholder|sprite/i;
 const BROWSER_IMPORT_SNIPPET = `(() => {
   const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
   const BAD_LABELS = new Set(['favorite', 'add to favorites', 'add to cart', 'cart']);
-  const PRODUCT_IMAGE_RE = /^https?:\/\/(?:ih\d?\.redbubble\.net|[^/]+\.redbubble\.net)\/.*\.(?:png|jpe?g|webp)(?:[?#].*)?$/i;
-  const NON_PRODUCT_IMAGE_RE = /avatar|logo|icon|heart|favorite|placeholder|sprite/i;
 
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const normalizeUrl = (value) => {
@@ -29,9 +25,26 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     if (url.startsWith('/')) return new URL(url, location.origin).href;
     return url;
   };
-  const firstSrcsetUrl = (srcset) => clean(srcset).split(',')[0]?.trim()?.split(/\s+/)[0] || '';
+  const srcsetUrls = (srcset) => clean(srcset).split(',').map((part) => normalizeUrl(part.trim().split(/\s+/)[0])).filter(Boolean);
+  const imageCandidates = (el) => [
+    normalizeUrl(el.currentSrc),
+    ...srcsetUrls(el.getAttribute('srcset')),
+    ...srcsetUrls(el.getAttribute('data-srcset')),
+    normalizeUrl(el.getAttribute('src')),
+    normalizeUrl(el.getAttribute('data-src')),
+  ].filter(Boolean);
   const isBadLabel = (value) => BAD_LABELS.has(clean(value).toLowerCase());
-  const isProductImage = (url) => PRODUCT_IMAGE_RE.test(url) && !NON_PRODUCT_IMAGE_RE.test(url);
+  const isProductImage = (url) => {
+    const value = clean(url).toLowerCase();
+    if (!value || value.includes('/boom/client/') || value.includes('.svg')) return false;
+    if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(value)) return false;
+    try {
+      const parsed = new URL(value);
+      return /^ih\d?\.redbubble\.net$/i.test(parsed.hostname) && parsed.pathname.includes('/image.') && /\.(png|jpe?g|webp)$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  };
   const isProductLink = (link) => {
     if (!link) return false;
     if (isBadLabel(link.getAttribute('aria-label')) || isBadLabel(link.getAttribute('title')) || isBadLabel(link.textContent)) return false;
@@ -71,19 +84,12 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
 
   const captured = media
     .map((el) => {
-      const candidateUrls = [
-        el.currentSrc,
-        el.getAttribute('src'),
-        el.getAttribute('data-src'),
-        firstSrcsetUrl(el.getAttribute('srcset')),
-        firstSrcsetUrl(el.getAttribute('data-srcset')),
-      ].map(normalizeUrl).filter(Boolean);
-      const imageUrl = candidateUrls.find(isProductImage) || '';
+      const card = el.closest('[data-testid], article, li, div') || el.parentElement || el;
+      const cardMedia = Array.from(new Set([...Array.from(card.querySelectorAll('img, source')), el]));
+      const imageUrl = cardMedia.flatMap(imageCandidates).find(isProductImage) || '';
       if (!imageUrl) return null;
-
       if (el.tagName === 'IMG' && el.naturalWidth && el.naturalHeight && (el.naturalWidth < 120 || el.naturalHeight < 120)) return null;
 
-      const card = el.closest('[data-testid], article, li, div') || el.parentElement || el;
       const links = Array.from(new Set([
         el.closest('a[href]'),
         ...Array.from(card.querySelectorAll('a[href]')),
@@ -159,8 +165,15 @@ function isSpecificRedbubbleProductUrl(value: unknown) {
 }
 
 function isRedbubbleProductImageUrl(value: unknown) {
-  const imageUrl = cleanText(value);
-  return PRODUCT_IMAGE_URL_RE.test(imageUrl) && !NON_PRODUCT_IMAGE_RE.test(imageUrl);
+  const imageUrl = cleanText(value).toLowerCase();
+  if (!imageUrl || imageUrl.includes('/boom/client/') || imageUrl.includes('.svg')) return false;
+  if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return false;
+  try {
+    const url = new URL(imageUrl);
+    return /^ih\d?\.redbubble\.net$/i.test(url.hostname) && url.pathname.includes('/image.') && /\.(png|jpe?g|webp)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function splitCsvLine(line: string) {
@@ -271,15 +284,15 @@ async function deleteBadImportedProductsAction() {
       where source like 'redbubble:%:browser'
         and (
           lower(trim(coalesce(title, ''))) in ('favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio')
-          or coalesce(image_url, '') !~* '^https?://(ih[0-9]?\.redbubble\.net|[^/]+\.redbubble\.net)/.*\.(png|jpe?g|webp)(\?|#|$)'
-          or coalesce(image_url, '') ~* '(avatar|logo|icon|heart|favorite|placeholder|sprite)'
+          or coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|avatar|logo|icon|heart|favorite|placeholder|sprite)'
+          or coalesce(image_url, '') !~* '^https?://ih[0-9]?\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
         )
       returning id
     )
     select count(*)::int as count from deleted
   `;
 
-  flashRedirect(`Deleted ${result[0]?.count || 0} bad browser-imported products.`);
+  flashRedirect(`Deleted ${result[0]?.count || 0} bad image imports.`);
 }
 
 async function insertManualProduct(input: {
@@ -318,7 +331,7 @@ async function insertBrowserCapturedProduct(input: {
 }) {
   if (isBadBrowserTitle(input.title)) return { inserted: false, skipped: true, reason: 'bad product title' };
   if (!isSpecificRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
-  if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a Redbubble product image CDN URL' };
+  if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be an ih*.redbubble.net /image. product mockup URL' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
   const shopName = cleanText(input.shopName) || 'InkWanderStudio';
@@ -607,14 +620,14 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
         </form>
 
         <form action={deleteBadImportedProductsAction} className="product-form admin-section">
-          <h2>Cleanup bad browser imports</h2>
-          <p className="admin-muted">Use this before re-importing if a previous capture saved favorite buttons, icons, logos, or non-product images.</p>
-          <button type="submit" className="primary-link">Delete bad imported products</button>
+          <h2>Cleanup bad image imports</h2>
+          <p className="admin-muted">Deletes browser imports whose image URL is a Redbubble UI asset, SVG, /boom/client URL, logo, icon, placeholder, or non-product CDN image.</p>
+          <button type="submit" className="primary-link">Delete bad image imports</button>
         </form>
 
         <div className="product-form admin-section">
           <h2>Browser-assisted paginated capture</h2>
-          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet starts from visible product images, finds the nearest real Redbubble product link, ignores favorite/cart controls, and copies the full accumulated JSON every time.</p>
+          <p className="admin-muted">Use this when Redbubble blocks server-side import. The capture snippet searches every image/source in the product card and only keeps ih*.redbubble.net mockup URLs containing /image.</p>
           <ol className="admin-muted">
             <li>Open Redbubble shop page 1.</li>
             <li>Run the capture products snippet in the browser console.</li>
@@ -631,7 +644,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
           <h2>Browser JSON import</h2>
-          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Review the preview table first; rows with bad titles, non-product URLs, or non-Redbubble product images are skipped.</p>
+          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Review the preview table first; rows with bad titles, non-product URLs, SVGs, /boom/client URLs, or non-Redbubble product images are skipped.</p>
           <BrowserJsonImportPreview />
           <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
