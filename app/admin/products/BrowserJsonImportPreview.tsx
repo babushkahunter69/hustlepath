@@ -3,10 +3,21 @@
 import { useMemo, useState } from 'react';
 
 const BAD_TITLES = new Set(['favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio']);
-const PRODUCT_IMAGE_RE = /^https?:\/\/(?:ih\d?\.redbubble\.net|[^/]+\.redbubble\.net)\/.*\.(?:png|jpe?g|webp)(?:[?#].*)?$/i;
 
 function cleanText(value: unknown) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isProductImageUrl(value: unknown) {
+  const imageUrl = cleanText(value).toLowerCase();
+  if (!imageUrl || imageUrl.includes('/boom/client/') || imageUrl.includes('.svg')) return false;
+  if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return false;
+  try {
+    const url = new URL(imageUrl);
+    return /^ih\d?\.redbubble\.net$/i.test(url.hostname) && url.pathname.includes('/image.') && /\.(png|jpe?g|webp)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function splitJsonValues(input: string) {
@@ -69,7 +80,7 @@ function rowStatus(row: Record<string, unknown>) {
 
   if (!title || BAD_TITLES.has(title.toLowerCase())) return 'Bad title';
   if (!isProductUrl(productUrl)) return 'Bad product URL';
-  if (!PRODUCT_IMAGE_RE.test(imageUrl) || /avatar|logo|icon|heart|favorite|placeholder/i.test(imageUrl)) return 'Bad image URL';
+  if (!isProductImageUrl(imageUrl)) return 'Bad image URL';
   return 'Ready';
 }
 
@@ -96,7 +107,7 @@ export default function BrowserJsonImportPreview() {
           rows={8}
           value={json}
           onChange={(event) => setJson(event.target.value)}
-          placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]'}
+          placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image.../flat,750x,075,f-pad,750x1000,f8f8f8.jpg",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]'}
         />
       </label>
       {preview.error && <div className="notice">{preview.error}</div>}
@@ -121,7 +132,7 @@ export default function BrowserJsonImportPreview() {
                 return (
                   <tr key={`${productUrl}-${index}`} style={{ borderTop: '1px solid #e5e7eb' }}>
                     <td style={{ padding: 8 }}>
-                      {PRODUCT_IMAGE_RE.test(imageUrl) ? <img src={imageUrl} alt="" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 10 }} /> : <span className="admin-muted">No product image</span>}
+                      {isProductImageUrl(imageUrl) ? <img src={imageUrl} alt="" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 10 }} /> : <span className="admin-muted">No product image</span>}
                     </td>
                     <td style={{ padding: 8, maxWidth: 260 }}>{title || 'Missing title'}</td>
                     <td style={{ padding: 8, maxWidth: 360, overflowWrap: 'anywhere' }}>{productUrl}</td>
