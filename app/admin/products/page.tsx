@@ -10,6 +10,24 @@ export const revalidate = 0;
 const INKWANDERSTUDIO_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
 const IMAGE_CHECK_TIMEOUT_MS = 7000;
 const IMAGE_URL_RE = /\.(png|jpe?g|webp)(\?|$)/i;
+const BROWSER_IMPORT_SNIPPET = `(() => {
+  const shopName = 'InkWanderStudio';
+  const anchors = Array.from(document.querySelectorAll('a[href*="/i/"]'));
+  const products = anchors.map((a) => {
+    const href = a.href;
+    const card = a.closest('article, li, div') || a;
+    const img = card.querySelector('img[src]') || a.querySelector('img[src]') || card.querySelector('source[srcset]');
+    let imageUrl = '';
+    if (img) {
+      imageUrl = img.getAttribute('src') || img.getAttribute('srcset')?.split(',')[0]?.trim()?.split(' ')[0] || '';
+    }
+    const title = a.getAttribute('aria-label') || img?.getAttribute('alt') || a.textContent?.trim() || '';
+    return { title: title.trim(), product_url: href, image_url: imageUrl.startsWith('//') ? \`https:\${imageUrl}\` : imageUrl, product_type: '', niche: '', tags: '', source_shop: shopName };
+  }).filter((item) => item.title && item.product_url.includes('/i/') && item.image_url && item.image_url.startsWith('http'));
+  const unique = Array.from(new Map(products.map((item) => [item.product_url, item])).values());
+  copy(JSON.stringify(unique, null, 2));
+  alert(\`Copied \${unique.length} Redbubble products to clipboard.\`);
+})();`;
 
 function flashRedirect(message: string) {
   redirect(`/admin/products?notice=${encodeURIComponent(message)}`);
@@ -68,6 +86,12 @@ function parseCsvRows(csv: string) {
       return row;
     }, {});
   });
+}
+
+function parseBrowserJsonRows(json: string) {
+  const parsed = JSON.parse(json);
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  return rows.filter((row) => row && typeof row === 'object') as Record<string, unknown>[];
 }
 
 function keywordsForProduct(productType: string, niche: string, tags: string, shopName = 'InkWanderStudio') {
@@ -210,13 +234,7 @@ async function manualRedbubbleProductAction(formData: FormData) {
   flashRedirect(`Imported ${title} manually. It is Ready for Pinterest pins.`);
 }
 
-async function csvRedbubbleProductsAction(formData: FormData) {
-  'use server';
-
-  const csv = String(formData.get('csv_data') || '').trim();
-  const rows = parseCsvRows(csv);
-  if (!rows.length) flashRedirect('Paste CSV rows with title, product_url, image_url, product_type, niche, tags.');
-
+async function importRows(rows: Record<string, unknown>[]) {
   let inserted = 0;
   let skipped = 0;
   const errors: string[] = [];
@@ -228,7 +246,7 @@ async function csvRedbubbleProductsAction(formData: FormData) {
 
     if (!title || !targetUrl || !imageUrl) {
       skipped += 1;
-      errors.push(`${title || targetUrl || 'CSV row'}: missing title, product_url, or image_url`);
+      errors.push(`${title || targetUrl || 'import row'}: missing title, product_url, or image_url`);
       continue;
     }
 
@@ -239,7 +257,7 @@ async function csvRedbubbleProductsAction(formData: FormData) {
       productType: cleanText(row.product_type),
       niche: cleanText(row.niche),
       tags: cleanText(row.tags),
-      shopName: cleanText(row.source_shop_name || row.shop || row.source) || 'InkWanderStudio',
+      shopName: cleanText(row.source_shop || row.source_shop_name || row.shop || row.source) || 'InkWanderStudio',
     });
 
     if (result.inserted) inserted += 1;
@@ -249,6 +267,36 @@ async function csvRedbubbleProductsAction(formData: FormData) {
     }
   }
 
+  return { inserted, skipped, errors };
+}
+
+async function browserJsonRedbubbleProductsAction(formData: FormData) {
+  'use server';
+
+  const json = String(formData.get('browser_json') || '').trim();
+  if (!json) flashRedirect('Paste the JSON copied by the browser snippet.');
+
+  let rows: Record<string, unknown>[] = [];
+  try {
+    rows = parseBrowserJsonRows(json);
+  } catch {
+    flashRedirect('Browser import JSON could not be parsed. Run the snippet again and paste the copied JSON array.');
+  }
+
+  if (!rows.length) flashRedirect('Browser import JSON did not contain any product rows.');
+  const { inserted, skipped, errors } = await importRows(rows);
+  const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
+  flashRedirect(`Browser JSON import added ${inserted} Ready products and skipped ${skipped}.${suffix}`);
+}
+
+async function csvRedbubbleProductsAction(formData: FormData) {
+  'use server';
+
+  const csv = String(formData.get('csv_data') || '').trim();
+  const rows = parseCsvRows(csv);
+  if (!rows.length) flashRedirect('Paste CSV rows with title, product_url, image_url, product_type, niche, tags.');
+
+  const { inserted, skipped, errors } = await importRows(rows);
   const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
   flashRedirect(`CSV import added ${inserted} Ready products and skipped ${skipped}.${suffix}`);
 }
@@ -340,8 +388,22 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={importRedbubbleShopAction} className="product-form admin-section">
           <h2>Automatic Redbubble import</h2>
-          <p className="admin-muted">Optional: try to crawl {INKWANDERSTUDIO_SHOP_URL}. If Redbubble blocks Vercel with 403, use manual or CSV import below.</p>
+          <p className="admin-muted">Optional: try to crawl {INKWANDERSTUDIO_SHOP_URL}. If Redbubble blocks Vercel with 403, use manual or browser JSON import below.</p>
           <button type="submit" className="primary-link">Import Redbubble products</button>
+        </form>
+
+        <div className="product-form admin-section">
+          <h2>Browser-assisted JSON capture</h2>
+          <p className="admin-muted">Open the InkWanderStudio shop, paste this snippet into the browser console, then paste the copied JSON into Browser JSON import below.</p>
+          <a href="https://www.redbubble.com/people/InkWanderStudio/shop" target="_blank" rel="noopener noreferrer" className="secondary-link small">Open InkWanderStudio shop</a>
+          <label className="field"><span>Console snippet</span><textarea readOnly rows={10} value={BROWSER_IMPORT_SNIPPET} /></label>
+        </div>
+
+        <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
+          <h2>Browser JSON import</h2>
+          <p className="admin-muted">Paste the JSON array copied by the browser snippet. Rows are validated, duplicate product URLs are skipped, and valid rows become Ready products.</p>
+          <label className="field"><span>Browser JSON</span><textarea name="browser_json" rows={8} placeholder={'[{\n  "title": "Financially Flexible Morally Exhausted",\n  "product_url": "https://www.redbubble.com/i/sticker/...",\n  "image_url": "https://ih1.redbubble.net/image...",\n  "product_type": "",\n  "niche": "",\n  "tags": "",\n  "source_shop": "InkWanderStudio"\n}]'} /></label>
+          <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
 
         <form action={manualRedbubbleProductAction} className="product-form admin-section">
@@ -360,12 +422,6 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <label className="field"><span>Tags</span><input name="manual_tags" placeholder="adulting, funny sticker, relatable stickers" /></label>
           <button type="submit" className="primary-link">Save manual product</button>
         </form>
-
-        <div className="product-form admin-section">
-          <h2>Browser-assisted image URL</h2>
-          <p className="admin-muted">Open the Redbubble product page in your browser, right-click the main product/design image, choose Copy Image Address, then paste that URL into Manual product import above.</p>
-          <a href="https://www.redbubble.com/people/InkWanderStudio/shop" target="_blank" rel="noopener noreferrer" className="secondary-link small">Open InkWanderStudio shop</a>
-        </div>
 
         <form action={csvRedbubbleProductsAction} className="product-form admin-section">
           <h2>CSV bulk import</h2>
