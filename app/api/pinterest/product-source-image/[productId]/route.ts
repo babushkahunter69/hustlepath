@@ -4,6 +4,12 @@ import { sql } from '@/lib/db';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
+function toResponseBody(bytes: Uint8Array) {
+  const body = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(body).set(bytes);
+  return body;
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
 
@@ -42,7 +48,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     );
   }
 
-  return new Response(result.bytes, {
+  return new Response(toResponseBody(result.bytes), {
     status: 200,
     headers: {
       ...debugHeaders,
