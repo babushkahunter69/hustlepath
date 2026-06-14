@@ -3,9 +3,15 @@
 import { useMemo, useState } from 'react';
 
 const BAD_TITLES = new Set(['favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio']);
+const BAD_TITLE_PREFIXES = ['tags:', 'from $', '$', 'favorite', 'add to cart'];
 
 function cleanText(value: unknown) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function hasBadTitle(value: unknown) {
+  const title = cleanText(value).toLowerCase();
+  return !title || BAD_TITLES.has(title) || BAD_TITLE_PREFIXES.some((prefix) => title.startsWith(prefix));
 }
 
 function imageRejectReason(value: unknown) {
@@ -91,7 +97,7 @@ function rowStatus(row: Record<string, unknown>) {
   const productUrl = cleanText(row.product_url || row.target_url || row.url);
   const imageUrl = cleanText(row.image_url || row.image);
 
-  if (!title || BAD_TITLES.has(title.toLowerCase())) return 'Rejected: bad title';
+  if (hasBadTitle(title)) return 'Rejected: bad title';
   const productReason = productUrlRejectReason(productUrl);
   if (productReason) return `Rejected: ${productReason}`;
   const imageReason = imageRejectReason(imageUrl);
