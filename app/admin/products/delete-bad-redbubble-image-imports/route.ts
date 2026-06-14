@@ -1,16 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function redirectWithNotice(message: string) {
-  const url = new URL('/admin/products', 'http://localhost');
+function redirectWithNotice(request: NextRequest, message: string) {
+  const url = new URL('/admin/products', request.url);
   url.searchParams.set('notice', message);
   return NextResponse.redirect(url, { status: 303 });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const result = await sql`
       with deleted as (
@@ -28,13 +28,13 @@ export async function POST() {
       select count(*)::int as count from deleted
     `;
 
-    return redirectWithNotice(`Deleted ${result[0]?.count || 0} bad Redbubble image imports.`);
+    return redirectWithNotice(request, `Deleted ${result[0]?.count || 0} bad Redbubble image imports.`);
   } catch (error) {
     console.error('Failed to delete bad Redbubble image imports', error);
-    return redirectWithNotice('Cleanup failed. Could not delete bad Redbubble image imports.');
+    return redirectWithNotice(request, 'Cleanup failed. Could not delete bad Redbubble image imports.');
   }
 }
 
-export async function GET() {
-  return redirectWithNotice('Use the cleanup button to delete bad Redbubble image imports.');
+export async function GET(request: NextRequest) {
+  return redirectWithNotice(request, 'Use the cleanup button to delete bad Redbubble image imports.');
 }
