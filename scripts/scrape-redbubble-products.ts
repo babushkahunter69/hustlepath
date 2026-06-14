@@ -124,23 +124,26 @@ async function autoScroll(page: Page) {
 }
 
 async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageScrapeResult> {
-  return page.evaluate(({ sourceShop, currentPage }) => {
-    const clean = (value: unknown) => String(value || '').replace(/\s+/g, ' ').trim();
-    const normalizeUrl = (value: unknown) => {
+  const browserScript = String.raw`(() => {
+    const sourceShop = ${JSON.stringify(SOURCE_SHOP)};
+    const currentPage = ${JSON.stringify(pageNumber)};
+
+    const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const normalizeUrl = (value) => {
       const text = clean(value);
       if (!text) return '';
-      if (text.startsWith('//')) return `https:${text}`;
+      if (text.startsWith('//')) return 'https:' + text;
       if (text.startsWith('/')) return new URL(text, location.origin).toString();
       return text;
     };
-    const uniqueBy = (items: any[], keyFn: (item: any) => string) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
-    const srcsetUrls = (srcset: unknown) => clean(srcset)
+    const uniqueBy = (items, keyFn) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
+    const srcsetUrls = (srcset) => clean(srcset)
       .split(',')
       .map((part) => normalizeUrl(clean(part).split(/\s+/)[0]))
       .filter(Boolean);
-    const backgroundUrls = (value: unknown) => {
+    const backgroundUrls = (value) => {
       const text = clean(value);
-      const urls: string[] = [];
+      const urls = [];
       if (!text) return urls;
       let cursor = 0;
       while (cursor < text.length) {
@@ -158,23 +161,23 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       }
       return urls;
     };
-    const visibleRect = (el: Element | null) => {
+    const visibleRect = (el) => {
       if (!el || !(el instanceof HTMLElement)) return null;
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0) return null;
       return rect;
     };
-    const largeVisibleRect = (el: Element | null) => {
+    const largeVisibleRect = (el) => {
       const rect = visibleRect(el);
       if (!rect) return null;
       if (rect.width <= 80 || rect.height <= 80) return null;
       return rect;
     };
-    const isBadTitle = (value: unknown) => {
+    const isBadTitle = (value) => {
       const title = clean(value).toLowerCase();
       return !title || title === 'favorite' || title === 'add to favorites' || title === 'add to cart' || title === 'cart' || title === 'redbubble' || title === 'inkwanderstudio' || title.startsWith('tags:') || title.startsWith('from $') || title.startsWith('$');
     };
-    const looksLikePrice = (value: unknown) => {
+    const looksLikePrice = (value) => {
       const text = clean(value);
       if (!text) return false;
       if (text.toLowerCase().startsWith('from $') || text.startsWith('$')) return true;
@@ -188,15 +191,15 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       }
       return digits > 0;
     };
-    const isBadImageUrl = (value: unknown) => {
+    const isBadImageUrl = (value) => {
       const url = clean(value).toLowerCase();
       return !url || url.includes('/boom/client/') || url.includes('.svg') || url.includes('/avatar') || url.includes('avatar.') || url.includes('logo') || url.includes('icon') || url.includes('favorite') || url.includes('heart');
     };
-    const tileFor = (el: Element | null) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
-    const imageCandidatesFor = (el: Element | null) => {
-      if (!el || !(el instanceof HTMLElement)) return [] as string[];
+    const tileFor = (el) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
+    const imageCandidatesFor = (el) => {
+      if (!el || !(el instanceof HTMLElement)) return [];
       const urls = [
-        normalizeUrl((el as HTMLImageElement).currentSrc),
+        normalizeUrl(el.currentSrc),
         normalizeUrl(el.getAttribute('src')),
         normalizeUrl(el.getAttribute('data-src')),
         ...srcsetUrls(el.getAttribute('srcset')),
@@ -209,8 +212,7 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
     };
     const links = uniqueBy(
       Array.from(document.querySelectorAll('a[href]'))
-        .map((link) => {
-          const anchor = link as HTMLAnchorElement;
+        .map((anchor) => {
           const href = normalizeUrl(anchor.getAttribute('href') || anchor.href);
           if (!href.includes('/i/')) return null;
           const rect = visibleRect(anchor);
@@ -226,28 +228,24 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
         .filter(Boolean),
       (item) => item.productUrl
     );
-
     const largeImages = Array.from(document.querySelectorAll('img'))
       .map((img) => {
-        const image = img as HTMLImageElement;
-        const rect = largeVisibleRect(image);
+        const rect = largeVisibleRect(img);
         if (!rect) return null;
-        const urls = imageCandidatesFor(image);
+        const urls = imageCandidatesFor(img);
         const acceptedUrl = urls.find((url) => !isBadImageUrl(url) && (url.startsWith('http://') || url.startsWith('https://'))) || '';
         return {
-          element: image,
+          element: img,
           rect,
           urls,
           acceptedUrl,
-          tile: tileFor(image),
-          alt: clean(image.getAttribute('alt')),
+          tile: tileFor(img),
+          alt: clean(img.getAttribute('alt')),
         };
       })
       .filter(Boolean);
-
     const backgroundBlocks = Array.from(document.querySelectorAll('article, li, section, div'))
-      .map((node) => {
-        const el = node as HTMLElement;
+      .map((el) => {
         const rect = largeVisibleRect(el);
         if (!rect) return null;
         const urls = uniqueBy([
@@ -266,7 +264,6 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
         };
       })
       .filter(Boolean);
-
     const visibleLargeImageCandidates = largeImages.map((item) => ({ url: item.acceptedUrl || item.urls[0] || '', width: item.rect.width, height: item.rect.height }));
     const productImages = uniqueBy(
       [...largeImages, ...backgroundBlocks]
@@ -277,10 +274,9 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           tile: item.tile,
           alt: item.alt,
         })),
-      (item) => `${item.imageUrl}|${Math.round(item.rect.top)}|${Math.round(item.rect.left)}`
+      (item) => item.imageUrl + '|' + Math.round(item.rect.top) + '|' + Math.round(item.rect.left)
     );
-
-    const nearestLinkForImage = (image: { rect: DOMRect; tile: Element | null }) => {
+    const nearestLinkForImage = (image) => {
       const tileLinks = links.filter((link) => link.tile === image.tile || (image.tile && image.tile.contains(link.element)));
       const pool = tileLinks.length ? tileLinks : links;
       const ranked = pool
@@ -292,46 +288,7 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
         .sort((a, b) => a.score - b.score);
       return ranked[0]?.link || null;
     };
-
-    const titleFromLink = (link: { element: Element; productUrl: string; text: string } | null, imageAlt: string) => {
-      const directText = clean(link?.text);
-      if (directText && !isBadTitle(directText) && !looksLikePrice(directText)) return directText;
-      if (imageAlt && !isBadTitle(imageAlt) && !looksLikePrice(imageAlt)) return imageAlt;
-      return link ? clean(titleFromUrl(link.productUrl)) : '';
-    };
-
-    const rows = productImages
-      .map((image) => {
-        const link = nearestLinkForImage(image);
-        if (!link) return null;
-        const title = titleFromLink(link, image.alt);
-        if (!title || isBadTitle(title) || looksLikePrice(title)) return null;
-        return {
-          title,
-          product_url: link.productUrl,
-          image_url: image.imageUrl,
-          product_type: clean(productTypeFromUrl(link.productUrl)),
-          source_shop: sourceShop,
-        };
-      })
-      .filter(Boolean) as ProductRow[];
-
-    const uniqueRows = uniqueBy(rows, (row) => row.product_url);
-
-    return {
-      rows: uniqueRows,
-      diagnostics: {
-        page: currentPage,
-        productLinkCount: links.length,
-        visibleLargeImageCount: visibleLargeImageCandidates.length,
-        acceptedImageCount: productImages.length,
-        rowCount: uniqueRows.length,
-        firstProductUrls: links.slice(0, 10).map((item) => item.productUrl),
-        firstImageUrls: productImages.slice(0, 20).map((item) => item.imageUrl),
-      },
-    };
-
-    function productTypeFromUrl(productUrl: string) {
+    const productTypeFromUrlLocal = (productUrl) => {
       try {
         const parts = new URL(productUrl).pathname.split('/').filter(Boolean);
         const index = parts.indexOf('i');
@@ -345,9 +302,8 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       } catch {
         return '';
       }
-    }
-
-    function titleFromUrl(productUrl: string) {
+    };
+    const titleFromUrlLocal = (productUrl) => {
       try {
         const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
         const index = parts.indexOf('i');
@@ -356,8 +312,44 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       } catch {
         return '';
       }
-    }
-  }, { sourceShop: SOURCE_SHOP, currentPage: pageNumber });
+    };
+    const titleFromLink = (link, imageAlt) => {
+      const directText = clean(link?.text);
+      if (directText && !isBadTitle(directText) && !looksLikePrice(directText)) return directText;
+      if (imageAlt && !isBadTitle(imageAlt) && !looksLikePrice(imageAlt)) return imageAlt;
+      return link ? clean(titleFromUrlLocal(link.productUrl)) : '';
+    };
+    const rows = productImages
+      .map((image) => {
+        const link = nearestLinkForImage(image);
+        if (!link) return null;
+        const title = titleFromLink(link, image.alt);
+        if (!title || isBadTitle(title) || looksLikePrice(title)) return null;
+        return {
+          title,
+          product_url: link.productUrl,
+          image_url: image.imageUrl,
+          product_type: clean(productTypeFromUrlLocal(link.productUrl)),
+          source_shop: sourceShop,
+        };
+      })
+      .filter(Boolean);
+    const uniqueRows = uniqueBy(rows, (row) => row.product_url);
+    return {
+      rows: uniqueRows,
+      diagnostics: {
+        page: currentPage,
+        productLinkCount: links.length,
+        visibleLargeImageCount: visibleLargeImageCandidates.length,
+        acceptedImageCount: productImages.length,
+        rowCount: uniqueRows.length,
+        firstProductUrls: links.slice(0, 10).map((item) => item.productUrl),
+        firstImageUrls: productImages.slice(0, 20).map((item) => item.imageUrl),
+      },
+    };
+  })()`;
+
+  return page.evaluate<PageScrapeResult>(browserScript);
 }
 
 async function gotoNextPage(page: Page) {
