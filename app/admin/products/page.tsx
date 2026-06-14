@@ -282,7 +282,10 @@ async function deleteBadImportedProductsAction() {
   const result = await sql`
     with deleted as (
       delete from products
-      where source like 'redbubble:%:browser'
+      where (
+        source like 'redbubble:%'
+        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
+      )
         and (
           lower(trim(coalesce(title, ''))) in ('favorite', 'add to favorites', 'add to cart', 'cart', 'redbubble', 'inkwanderstudio')
           or coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|avatar|logo|icon|heart|favorite|placeholder|sprite)'
@@ -624,7 +627,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={deleteBadImportedProductsAction} className="product-form admin-section">
           <h2>Delete bad Redbubble image imports</h2>
-          <p className="admin-muted">Delete products whose saved image URL is a Redbubble UI asset, SVG, /boom/client URL, or not an ih0.redbubble.net or ih1.redbubble.net product image.</p>
+          <p className="admin-muted">Delete any saved Redbubble product whose image URL is a UI asset, SVG, /boom/client URL, or not an ih0.redbubble.net or ih1.redbubble.net product image.</p>
           <button type="submit" className="primary-link">Delete bad Redbubble image imports</button>
         </form>
 
