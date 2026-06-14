@@ -16,6 +16,7 @@ export type PinterestProductImageDebug = {
   byteLength: number;
   hasImage: boolean;
   reason?: string;
+  rejected_reason?: string;
 };
 
 export type PinterestProductImageResult = PinterestProductImageDebug & {
@@ -38,6 +39,11 @@ function imageDataToBase64(bytes: Uint8Array) {
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
+}
+
+function isRedbubbleUiAsset(value: string) {
+  const url = cleanText(value).toLowerCase();
+  return url.includes('/boom/client/') || url.includes('redbubble logo') || /\.(svg)(\?|#|$)/i.test(url) || /avatar|logo|icon|heart|favorite|placeholder|sprite/.test(url);
 }
 
 function sniffImageType(bytes: Uint8Array, declaredType: string) {
@@ -79,7 +85,7 @@ function extractMetaImageUrl(html: string, pageUrl: string) {
     if (match?.[1]) return absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
   }
 
-  const cdnMatch = html.match(/https:\/\/[^"'\s<>]+(?:redbubble|rb\.gy|ih\d?\.redbubble\.net)[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
+  const cdnMatch = html.match(/https:\/\/ih\d?\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
   return cdnMatch?.[0]?.replaceAll('&amp;', '&') || '';
 }
 
@@ -112,6 +118,7 @@ async function fetchRedbubblePageImageUrl(pageUrl: string) {
 function emptyResult(product: any, candidates: string[], sourceUrl: string, status: string, reason?: string): PinterestProductImageResult {
   const productImageUrl = cleanText(product?.image_url);
   const productTargetUrl = cleanText(product?.target_url);
+  const rejectedReason = isRedbubbleUiAsset(sourceUrl || productImageUrl) ? 'internal-redbubble-ui-asset' : undefined;
 
   return {
     productId: product?.id ? String(product.id) : undefined,
@@ -126,6 +133,7 @@ function emptyResult(product: any, candidates: string[], sourceUrl: string, stat
     byteLength: 0,
     hasImage: false,
     reason,
+    rejected_reason: rejectedReason,
     bytes: null,
     dataUrl: null,
   };
@@ -133,6 +141,10 @@ function emptyResult(product: any, candidates: string[], sourceUrl: string, stat
 
 async function fetchImageCandidate(product: any, candidates: string[], sourceUrl: string): Promise<PinterestProductImageResult> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  if (isRedbubbleUiAsset(sourceUrl)) {
+    return emptyResult(product, candidates, sourceUrl, 'rejected-ui-asset', 'internal-redbubble-ui-asset');
+  }
 
   try {
     const controller = new AbortController();
@@ -227,7 +239,7 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 }
 
 function isDirectImageUrl(value: string) {
-  return /\.(png|jpe?g|webp)(\?|$)/i.test(value);
+  return /\.(png|jpe?g|webp)(\?|$)/i.test(value) && !isRedbubbleUiAsset(value);
 }
 
 export function pinterestProductImageDebugSummary(result: PinterestProductImageResult): PinterestProductImageDebug {
@@ -245,6 +257,7 @@ export function pinterestProductImageDebugSummary(result: PinterestProductImageR
     byteLength: result.byteLength,
     hasImage: result.hasImage,
     reason: result.reason,
+    rejected_reason: result.rejected_reason,
   };
 }
 
@@ -253,11 +266,11 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   const targetUrl = cleanText(product?.target_url);
   const candidates: string[] = [];
 
-  if (isAbsoluteUrl(explicitImageUrl)) candidates.push(explicitImageUrl);
+  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
 
-  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl)) {
+  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
     const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
-    if (scrapedExplicitImageUrl) candidates.push(scrapedExplicitImageUrl);
+    if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
   }
 
   if (isAbsoluteUrl(targetUrl) && isDirectImageUrl(targetUrl)) {
@@ -266,7 +279,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
 
   if (isAbsoluteUrl(targetUrl) && !isDirectImageUrl(targetUrl)) {
     const scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
-    if (scrapedTargetImageUrl) candidates.push(scrapedTargetImageUrl);
+    if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
   }
 
   const seen = new Set<string>();
@@ -277,7 +290,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   });
 
   if (!uniqueCandidates.length) {
-    const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', 'image_url-and-target_url-missing-or-not-absolute');
+    const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', isRedbubbleUiAsset(explicitImageUrl) ? 'internal-redbubble-ui-asset' : 'image_url-and-target_url-missing-or-not-absolute');
     console.info('Pinterest product image fallback triggered', pinterestProductImageDebugSummary(result));
     return result;
   }
@@ -311,6 +324,7 @@ export function pinterestProductImageHeaders(result: PinterestProductImageResult
     'X-Product-Image-Bytes': String(result.byteLength || 0),
     'X-Product-Image-Has-Image': result.hasImage ? 'true' : 'false',
     'X-Product-Image-Reason': (result.reason || '').slice(0, 160),
+    'X-Product-Image-Rejected-Reason': (result.rejected_reason || '').slice(0, 160),
     'X-Product-Image-Url-Absolute': result.productImageUrlIsAbsolute ? 'true' : 'false',
     'X-Product-Target-Url-Absolute': result.productTargetUrlIsAbsolute ? 'true' : 'false',
     'X-Product-Image-Candidates': result.candidates.join(' | ').slice(0, 500),
