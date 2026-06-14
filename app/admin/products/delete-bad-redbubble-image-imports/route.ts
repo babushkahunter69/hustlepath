@@ -4,17 +4,6 @@ import { sql } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const BAD_IMAGE_WHERE_SQL = `
-  (
-    source like 'redbubble:%'
-    or coalesce(target_url, '') ~* '^https?://(?:www\\.)?redbubble\\.com/'
-  )
-  and (
-    coalesce(image_url, '') ~* '(/boom/client/|\\.svg(\\?|#|$)|www\\.redbubble\\.com/boom)'
-    or coalesce(image_url, '') !~* '^https?://ih[01]\\.redbubble\\.net/.*/image\\..*\\.(png|jpe?g|webp)(\\?|#|$)'
-  )
-`;
-
 function redirectWithNotice(request: NextRequest, message: string) {
   const url = new URL('/admin/products', request.url);
   url.searchParams.set('notice', message);
@@ -34,7 +23,6 @@ function logCleanupError(stage: string, error: unknown, extra: Record<string, un
     table: 'products',
     imageColumn: 'image_url',
     statusColumn: 'status',
-    where: BAD_IMAGE_WHERE_SQL,
     message: maybeError?.message || String(error),
     name: maybeError?.name,
     stack: maybeError?.stack,
@@ -44,37 +32,58 @@ function logCleanupError(stage: string, error: unknown, extra: Record<string, un
 }
 
 async function countBadImports() {
-  const result = await sql(`
+  const result = await sql`
     select count(*)::int as count
     from products
-    where ${BAD_IMAGE_WHERE_SQL}
-  `);
+    where (
+      source like 'redbubble:%'
+      or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
+    )
+      and (
+        coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
+        or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
+      )
+  `;
   return Number(result[0]?.count || 0);
 }
 
 async function deleteBadImports() {
-  const result = await sql(`
+  const result = await sql`
     with deleted as (
       delete from products
-      where ${BAD_IMAGE_WHERE_SQL}
+      where (
+        source like 'redbubble:%'
+        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
+      )
+        and (
+          coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
+          or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
+        )
       returning id
     )
     select count(*)::int as count from deleted
-  `);
+  `;
   return Number(result[0]?.count || 0);
 }
 
 async function invalidateBadImports() {
-  const result = await sql(`
+  const result = await sql`
     with updated as (
       update products
       set status = 'archived',
           updated_at = now()
-      where ${BAD_IMAGE_WHERE_SQL}
+      where (
+        source like 'redbubble:%'
+        or coalesce(target_url, '') ~* '^https?://(?:www\.)?redbubble\.com/'
+      )
+        and (
+          coalesce(image_url, '') ~* '(/boom/client/|\.svg(\?|#|$)|www\.redbubble\.com/boom)'
+          or coalesce(image_url, '') !~* '^https?://ih[01]\.redbubble\.net/.*/image\..*\.(png|jpe?g|webp)(\?|#|$)'
+        )
       returning id
     )
     select count(*)::int as count from updated
-  `);
+  `;
   return Number(result[0]?.count || 0);
 }
 
