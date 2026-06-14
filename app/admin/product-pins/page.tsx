@@ -4,10 +4,15 @@ import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { attachProductPinUrls, generateProductPinterestPins, normalizeProductPinterestMeta } from '@/lib/productPinterest';
 import { parseKeywords } from '@/lib/monetization';
+import { validateProductSource } from '@/lib/redbubbleProductSource';
 import ProductPinPreviewImage from './ProductPinPreviewImage';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function flashRedirect(message: string) {
+  redirect(`/admin/product-pins?notice=${encodeURIComponent(message)}`);
+}
 
 async function productPinsAction(formData: FormData) {
   'use server';
@@ -27,6 +32,23 @@ async function productPinsAction(formData: FormData) {
   if (!product) redirect('/admin/product-pins');
 
   if (intent === 'generate_pins') {
+    const validation = validateProductSource(product);
+    if (validation.status !== 'ready') {
+      await sql`
+        update products
+        set pinterest_meta = ${JSON.stringify({
+          ...(product.pinterest_meta && typeof product.pinterest_meta === 'object' ? product.pinterest_meta : {}),
+          pins: [],
+          source_status: validation.status,
+          source_status_reason: validation.reason,
+          updated_at: new Date().toISOString(),
+        })}::jsonb,
+            updated_at = now()
+        where id = ${product.id}
+      `;
+      flashRedirect(`${product.title || 'Product'} is ${validation.label.toLowerCase()}: ${validation.reason}`);
+    }
+
     const pins = await generateProductPinterestPins({
       id: String(product.id),
       title: String(product.title || ''),
@@ -115,7 +137,14 @@ function shortPreviewText(value: unknown, maxLength = 170) {
   return `${output.join(' ').replace(/[,.!?;:]$/, '')}...`;
 }
 
-export default async function ProductPinsPage() {
+function statusStyles(status: string) {
+  if (status === 'ready') return { background: '#dcfce7', color: '#14532d', border: '1px solid #86efac' };
+  if (status === 'missing_image') return { background: '#fef3c7', color: '#78350f', border: '1px solid #facc15' };
+  return { background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fca5a5' };
+}
+
+export default async function ProductPinsPage({ searchParams }: { searchParams?: Promise<{ notice?: string }> }) {
+  const params = searchParams ? await searchParams : {};
   let products: any[] = [];
   let error = '';
 
@@ -136,8 +165,9 @@ export default async function ProductPinsPage() {
     acc.total += pins.length;
     acc.draft += pins.filter((pin: any) => pin.status !== 'posted').length;
     acc.posted += pins.filter((pin: any) => pin.status === 'posted').length;
+    if (validateProductSource(product).status === 'ready') acc.ready += 1;
     return acc;
-  }, { total: 0, draft: 0, posted: 0 });
+  }, { total: 0, draft: 0, posted: 0, ready: 0 });
 
   return (
     <main className="admin-shell">
@@ -147,22 +177,23 @@ export default async function ProductPinsPage() {
             <div className="admin-topline">Redbubble Pinterest workflow</div>
             <h1>Product pin command center</h1>
             <p className="admin-muted">
-              Generate Pinterest-ready campaigns for Redbubble products, preview the exact local image route, copy tracked links, and open the Pinterest pin builder.
+              Generate Pinterest-ready campaigns only for complete Redbubble product records with specific product URLs and image URLs.
             </p>
           </div>
           <Link href="/admin" className="secondary-link small">Dashboard</Link>
         </div>
 
         {error && <div className="notice">Database not ready: {error}</div>}
+        {params.notice && <div className="notice">{params.notice}</div>}
 
         <div className="notice">
-          Admin previews use the local generated image route. Open Source image on any card to inspect the exact fetched product image and debug headers.
+          Product pins require a specific Redbubble product/design URL and an absolute image URL. Shop/profile URLs are marked Invalid and skipped.
         </div>
 
         <div className="stat-grid three">
           <div className="stat-card"><span>{totals.total}</span><p>Total product pins</p></div>
           <div className="stat-card"><span>{totals.draft}</span><p>Draft pins</p></div>
-          <div className="stat-card"><span>{totals.posted}</span><p>Posted pins</p></div>
+          <div className="stat-card"><span>{totals.ready}</span><p>Ready products</p></div>
         </div>
 
         <div className="pin-workflow-list">
@@ -170,6 +201,8 @@ export default async function ProductPinsPage() {
 
           {products.map((product) => {
             const pins = getPins(product);
+            const validation = validateProductSource(product);
+            const canGenerate = validation.status === 'ready';
             const draftCount = pins.filter((pin: any) => pin.status !== 'posted').length;
             const postedCount = pins.filter((pin: any) => pin.status === 'posted').length;
 
@@ -179,6 +212,10 @@ export default async function ProductPinsPage() {
                   <div>
                     <p className="eyebrow">{product.source || 'redbubble'} · {product.status || 'active'}</p>
                     <h2>{product.title || 'Untitled product'}</h2>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, borderRadius: 999, padding: '8px 12px', fontWeight: 800, ...statusStyles(validation.status) }}>
+                      {validation.label}
+                    </div>
+                    <p className="admin-muted">{validation.reason}</p>
                     <p className="admin-muted">{pins.length} pins · {draftCount} draft · {postedCount} posted</p>
                   </div>
 
@@ -187,24 +224,30 @@ export default async function ProductPinsPage() {
                       Test product
                     </Link>
                     <Link href="/admin/products" className="secondary-link small">
-                      Edit products
+                      Fix source data
                     </Link>
                     <form action={productPinsAction}>
                       <input type="hidden" name="product_id" value={product.id} />
-                      <button type="submit" name="intent" value="generate_pins" className="primary-link small">
+                      <button type="submit" name="intent" value="generate_pins" className="primary-link small" disabled={!canGenerate}>
                         {pins.length ? 'Regenerate pins' : 'Generate pins'}
                       </button>
                     </form>
                   </div>
                 </div>
 
-                {pins.length === 0 && (
+                {!canGenerate && (
+                  <div className="empty-state compact-empty">
+                    This product is incomplete, so Pinterest pin generation is disabled. Import a specific Redbubble product URL or add an absolute image URL first.
+                  </div>
+                )}
+
+                {canGenerate && pins.length === 0 && (
                   <div className="empty-state compact-empty">
                     No product pins generated yet. Use Generate pins to create 8 Pinterest campaign drafts.
                   </div>
                 )}
 
-                {pins.length > 0 && (
+                {canGenerate && pins.length > 0 && (
                   <div className="pin-grid">
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
