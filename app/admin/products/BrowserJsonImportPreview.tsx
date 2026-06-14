@@ -13,12 +13,14 @@ function imageRejectReason(value: unknown) {
   if (!imageUrl) return 'Missing image URL';
   if (imageUrl.includes('/boom/client/')) return 'Internal Redbubble UI asset (/boom/client/)';
   if (imageUrl.includes('.svg')) return 'SVG asset instead of product image';
-  if (/avatar|logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return 'UI asset, icon, logo, or placeholder';
+  if (imageUrl.includes('/avatar') || imageUrl.includes('avatar.')) return 'Avatar image instead of product image';
+  if (/logo|icon|heart|favorite|placeholder|sprite/.test(imageUrl)) return 'UI asset, icon, logo, or placeholder';
   try {
     const url = new URL(imageUrl);
-    if (!/^ih[01]\.redbubble\.net$/i.test(url.hostname)) return 'Image host must be ih0.redbubble.net or ih1.redbubble.net';
-    if (!url.pathname.includes('/image.')) return 'Image path must contain /image.';
-    if (!/\.(png|jpe?g|webp)$/i.test(url.pathname)) return 'Image must end in png, jpg, jpeg, or webp';
+    const isRbcdn = url.hostname.includes('rbcdn');
+    const isRedbubbleNet = url.hostname.includes('redbubble.net');
+    if (!isRbcdn && !isRedbubbleNet) return 'Image host must be rbcdn or redbubble.net';
+    if (!url.pathname.includes('/image')) return 'Image path must contain /image';
     return '';
   } catch {
     return 'Image URL is not a valid absolute URL';
