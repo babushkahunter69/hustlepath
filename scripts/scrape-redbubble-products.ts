@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from 'playwright';
 
 type ProductRow = {
@@ -209,9 +208,9 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       return uniqueBy(urls.filter(Boolean), (url) => url);
     };
     const links = uniqueBy(
-      Array.from(document.querySelectorAll('a[href]'))
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
         .map((link) => {
-          const href = normalizeUrl(link.getAttribute('href') || (link as HTMLAnchorElement).href);
+          const href = normalizeUrl(link.getAttribute('href') || link.href);
           if (!href.includes('/i/')) return null;
           const rect = visibleRect(link);
           if (!rect) return null;
@@ -223,11 +222,11 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
             text: clean(link.textContent),
           };
         })
-        .filter((item): item is { element: Element; productUrl: string; rect: DOMRect; tile: Element | null; text: string } => Boolean(item)),
+        .filter(Boolean) as Array<{ element: HTMLAnchorElement; productUrl: string; rect: DOMRect; tile: Element | null; text: string }>,
       (item) => item.productUrl
     );
 
-    const largeImages = Array.from(document.querySelectorAll('img'))
+    const largeImages = Array.from(document.querySelectorAll<HTMLImageElement>('img'))
       .map((img) => {
         const rect = largeVisibleRect(img);
         if (!rect) return null;
@@ -242,15 +241,15 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           alt: clean(img.getAttribute('alt')),
         };
       })
-      .filter((item): item is { element: Element; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string } => Boolean(item));
+      .filter(Boolean) as Array<{ element: HTMLImageElement; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string }>;
 
-    const backgroundBlocks = Array.from(document.querySelectorAll('article, li, section, div'))
+    const backgroundBlocks = Array.from(document.querySelectorAll<HTMLElement>('article, li, section, div'))
       .map((el) => {
         const rect = largeVisibleRect(el);
         if (!rect) return null;
         const urls = uniqueBy([
-          ...backgroundUrls((el as HTMLElement).style.backgroundImage),
-          ...backgroundUrls((el.parentElement as HTMLElement | null)?.style?.backgroundImage),
+          ...backgroundUrls(el.style.backgroundImage),
+          ...backgroundUrls(el.parentElement?.style?.backgroundImage),
         ].filter(Boolean), (url) => url);
         const acceptedUrl = urls.find((url) => !isBadImageUrl(url) && (url.startsWith('http://') || url.startsWith('https://'))) || '';
         if (!acceptedUrl) return null;
@@ -263,7 +262,7 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           alt: '',
         };
       })
-      .filter((item): item is { element: Element; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string } => Boolean(item));
+      .filter(Boolean) as Array<{ element: HTMLElement; rect: DOMRect; urls: string[]; acceptedUrl: string; tile: Element | null; alt: string }>;
 
     const visibleLargeImageCandidates = largeImages.map((item) => ({ url: item.acceptedUrl || item.urls[0] || '', width: item.rect.width, height: item.rect.height }));
     const productImages = uniqueBy(
