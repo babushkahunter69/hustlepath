@@ -5,7 +5,9 @@ const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', '
 export type PinterestProductImageDebug = {
   productId?: string;
   productImageUrl: string;
+  productImageUrlIsAbsolute: boolean;
   productTargetUrl: string;
+  productTargetUrlIsAbsolute: boolean;
   candidates: string[];
   sourceUrl: string;
   status: string;
@@ -32,6 +34,10 @@ function imageDataToBase64(bytes: Uint8Array) {
     binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
   return btoa(binary);
+}
+
+function isAbsoluteUrl(value: string) {
+  return /^https?:\/\//i.test(value);
 }
 
 function sniffImageType(bytes: Uint8Array, declaredType: string) {
@@ -104,10 +110,15 @@ async function fetchRedbubblePageImageUrl(pageUrl: string) {
 }
 
 function emptyResult(product: any, candidates: string[], sourceUrl: string, status: string, reason?: string): PinterestProductImageResult {
+  const productImageUrl = cleanText(product?.image_url);
+  const productTargetUrl = cleanText(product?.target_url);
+
   return {
     productId: product?.id ? String(product.id) : undefined,
-    productImageUrl: cleanText(product?.image_url),
-    productTargetUrl: cleanText(product?.target_url),
+    productImageUrl,
+    productImageUrlIsAbsolute: isAbsoluteUrl(productImageUrl),
+    productTargetUrl,
+    productTargetUrlIsAbsolute: isAbsoluteUrl(productTargetUrl),
     candidates,
     sourceUrl,
     status,
@@ -129,7 +140,7 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
     const response = await fetch(sourceUrl, {
       signal: controller.signal,
       headers: {
-        accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        accept: 'image/png,image/jpeg,image/webp,image/*;q=0.6,*/*;q=0.4',
         'accept-language': 'en-US,en;q=0.9',
         referer: 'https://www.redbubble.com/',
         'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
@@ -139,10 +150,13 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 
     const declaredType = cleanText(response.headers.get('content-type')).split(';')[0].toLowerCase();
     const declaredLength = Number(response.headers.get('content-length') || 0);
+    const baseResult = emptyResult(product, candidates, sourceUrl, 'pending');
 
     if (!response.ok) {
       return {
-        ...emptyResult(product, candidates, sourceUrl, `http-${response.status}`, 'non-ok-response'),
+        ...baseResult,
+        status: `http-${response.status}`,
+        reason: 'non-ok-response',
         httpStatus: response.status,
         contentType: declaredType,
       };
@@ -150,7 +164,9 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 
     if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_IMAGE_BYTES) {
       return {
-        ...emptyResult(product, candidates, sourceUrl, 'too-large-header', 'content-length-too-large'),
+        ...baseResult,
+        status: 'too-large-header',
+        reason: 'content-length-too-large',
         httpStatus: response.status,
         contentType: declaredType,
         byteLength: declaredLength,
@@ -162,7 +178,9 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 
     if (!bytes.byteLength) {
       return {
-        ...emptyResult(product, candidates, sourceUrl, 'empty-image', 'empty-response-body'),
+        ...baseResult,
+        status: 'empty-image',
+        reason: 'empty-response-body',
         httpStatus: response.status,
         contentType: declaredType,
       };
@@ -170,7 +188,9 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 
     if (bytes.byteLength > MAX_REMOTE_IMAGE_BYTES) {
       return {
-        ...emptyResult(product, candidates, sourceUrl, 'too-large-body', 'response-body-too-large'),
+        ...baseResult,
+        status: 'too-large-body',
+        reason: 'response-body-too-large',
         httpStatus: response.status,
         contentType: declaredType,
         byteLength: bytes.byteLength,
@@ -179,7 +199,9 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
 
     if (!contentType) {
       return {
-        ...emptyResult(product, candidates, sourceUrl, `unsupported-${declaredType || 'unknown'}`, 'unsupported-image-content-type'),
+        ...baseResult,
+        status: `unsupported-${declaredType || 'unknown'}`,
+        reason: 'unsupported-image-content-type',
         httpStatus: response.status,
         contentType: declaredType,
         byteLength: bytes.byteLength,
@@ -187,12 +209,9 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
     }
 
     return {
-      productId: product?.id ? String(product.id) : undefined,
-      productImageUrl: cleanText(product?.image_url),
-      productTargetUrl: cleanText(product?.target_url),
-      candidates,
-      sourceUrl,
+      ...baseResult,
       status: 'ok',
+      reason: undefined,
       httpStatus: response.status,
       contentType,
       byteLength: bytes.byteLength,
@@ -205,10 +224,6 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
-}
-
-function isAbsoluteUrl(value: string) {
-  return /^https?:\/\//i.test(value);
 }
 
 function isDirectImageUrl(value: string) {
@@ -243,24 +258,30 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     return true;
   });
 
-  if (!uniqueCandidates.length) return emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', 'image_url-and-target_url-missing-or-not-absolute');
+  if (!uniqueCandidates.length) {
+    const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', 'image_url-and-target_url-missing-or-not-absolute');
+    console.info('Pinterest product image fallback triggered', result);
+    return result;
+  }
 
   let lastResult: PinterestProductImageResult | null = null;
 
   for (const candidate of uniqueCandidates) {
     const result = await fetchImageCandidate(product, uniqueCandidates, candidate);
+    console.info('Pinterest product image candidate result', result);
     if (result.hasImage) return result;
     lastResult = result;
-    console.info('Pinterest product image candidate failed', result);
   }
 
-  return {
+  const fallbackResult = {
     ...(lastResult || emptyResult(product, uniqueCandidates, uniqueCandidates[0], 'all-candidates-failed')),
     status: 'all-candidates-failed',
     hasImage: false,
     bytes: null,
     dataUrl: null,
   };
+  console.info('Pinterest product image fallback triggered', fallbackResult);
+  return fallbackResult;
 }
 
 export function pinterestProductImageHeaders(result: PinterestProductImageResult) {
@@ -272,6 +293,8 @@ export function pinterestProductImageHeaders(result: PinterestProductImageResult
     'X-Product-Image-Bytes': String(result.byteLength || 0),
     'X-Product-Image-Has-Image': result.hasImage ? 'true' : 'false',
     'X-Product-Image-Reason': (result.reason || '').slice(0, 160),
+    'X-Product-Image-Url-Absolute': result.productImageUrlIsAbsolute ? 'true' : 'false',
+    'X-Product-Target-Url-Absolute': result.productTargetUrlIsAbsolute ? 'true' : 'false',
     'X-Product-Image-Candidates': result.candidates.join(' | ').slice(0, 500),
   };
 }
