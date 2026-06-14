@@ -156,7 +156,7 @@ export default async function ProductPinsPage() {
         {error && <div className="notice">Database not ready: {error}</div>}
 
         <div className="notice">
-          Admin previews use the local generated image route. The Pinterest builder uses the same route path as an absolute media URL.
+          Admin previews use the local generated image route. Open Source image on any card to inspect the exact fetched product image and debug headers.
         </div>
 
         <div className="stat-grid three">
@@ -208,8 +208,10 @@ export default async function ProductPinsPage() {
                   <div className="pin-grid">
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
+                      const sourceImagePath = `/api/pinterest/product-source-image/${product.id}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
                       const pinterestImageUrl = new URL(imagePath, canonicalSiteUrl).toString();
+                      const sourceImageUrl = new URL(sourceImagePath, canonicalSiteUrl).toString();
                       const trackedUrl = trackedPath.startsWith('http') ? trackedPath : new URL(trackedPath, canonicalSiteUrl).toString();
                       const pinterestDescription = [pin.title, shortPreviewText(pin.description, 320)].filter(Boolean).join(' - ');
                       const pinterestUrl = `https://www.pinterest.com/pin-builder/?url=${encodeURIComponent(trackedUrl)}&media=${encodeURIComponent(pinterestImageUrl)}&description=${encodeURIComponent(pinterestDescription)}`;
@@ -235,6 +237,7 @@ export default async function ProductPinsPage() {
 
                           <div className="pin-tools">
                             <a href={imagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Open image</a>
+                            <a href={sourceImagePath} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Source image</a>
                             <a href={trackedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-light small">Test link</a>
                             <a href={pinterestUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark small">Open Pinterest</a>
                           </div>
@@ -247,6 +250,11 @@ export default async function ProductPinsPage() {
                           <div className="tracked-url-box">
                             <small>Local preview image route</small>
                             <code>{imagePath}</code>
+                          </div>
+
+                          <div className="tracked-url-box">
+                            <small>Source image route</small>
+                            <code>{sourceImageUrl}</code>
                           </div>
 
                           <div className="tracked-url-box">
