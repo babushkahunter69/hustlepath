@@ -10,6 +10,7 @@ export const contentType = 'image/png';
 
 const PIN_WIDTH = 1000;
 const PIN_HEIGHT = 1500;
+const SYSTEM_PIN_KEYWORD_RE = /^(image_server_check|warning):/i;
 
 type Theme = ReturnType<typeof themeFor>;
 
@@ -130,6 +131,17 @@ function designNameFromUrl(value: unknown) {
   }
 }
 
+function productTypeLabel(product: any) {
+  const haystack = `${cleanText(product?.target_url)} ${parseKeywords(product?.keywords).join(' ')}`.toLowerCase();
+  if (/classic-t-shirt|t-shirt|shirt|tee/.test(haystack)) return 'T-Shirt';
+  if (/mug|coffee-cup/.test(haystack)) return 'Mug';
+  if (/poster|print/.test(haystack)) return 'Print';
+  if (/notebook|journal/.test(haystack)) return 'Notebook';
+  if (/phone-case|case/.test(haystack)) return 'Phone Case';
+  if (/sticker/.test(haystack)) return 'Sticker';
+  return 'Redbubble Design';
+}
+
 function designName(pin: any, product: any) {
   const fromPin = cleanText(pin?.design_focus || pin?.designFocus);
   const fromUrl = designNameFromUrl(product?.target_url);
@@ -172,7 +184,7 @@ function captionFor(pin: any, product: any) {
   const design = designName(pin, product);
   const niche = nicheLabel(pin, product).toLowerCase();
   const raw = cleanText(pin?.description);
-  const generic = !raw || /unique redbubble|trending redbubble|perfect gifts|seasonal gift ideas|category pin/i.test(raw);
+  const generic = !raw || /unique redbubble|trending redbubble|perfect gifts|seasonal gift ideas|category pin/i.test(raw) || /captured from browser/i.test(raw);
 
   if (!generic) return clampSentence(raw, 132);
   if (niche.includes('coffee')) return `${design} brings coffee culture humor to stickers, mugs, laptops, and cozy desk setups.`;
@@ -187,9 +199,10 @@ function keywordTags(pin: any, product: any) {
   const tags = raw
     .map((value: unknown) => titleCase(clampSentence(value as string, 20)))
     .filter(Boolean)
-    .filter((tag: string) => !/redbubble design/i.test(tag));
+    .filter((tag: string) => !/redbubble design/i.test(tag))
+    .filter((tag: string) => !SYSTEM_PIN_KEYWORD_RE.test(tag));
 
-  const fallback = [nicheLabel(pin, product), 'Sticker Idea', 'Giftable Art'];
+  const fallback = [nicheLabel(pin, product), productTypeLabel(product), 'Giftable Art'];
   return Array.from(new Set([...tags, ...fallback])).slice(0, 3);
 }
 
@@ -237,7 +250,7 @@ function TopBar({ theme, niche }: { theme: Theme; niche: string }) {
   );
 }
 
-function MockupFallbackHero({ title, niche, theme }: { title: string; niche: string; theme: Theme }) {
+function MockupFallbackHero({ title, niche, productType, theme }: { title: string; niche: string; productType: string; theme: Theme }) {
   const titleLines = wrapText(title, 14, 3).lines;
   return (
     <div
@@ -251,29 +264,30 @@ function MockupFallbackHero({ title, niche, theme }: { title: string; niche: str
         padding: 30,
       }}
     >
-      <div style={{ width: 700, height: 700, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ position: 'absolute', width: 650, height: 650, borderRadius: 84, background: theme.shadow, opacity: 0.5, transform: 'rotate(8deg)' }} />
-        <div style={{ position: 'absolute', width: 640, height: 640, borderRadius: 84, background: theme.card, border: `8px solid ${theme.ink}`, transform: 'rotate(-4deg)', boxShadow: '0 34px 70px rgba(0,0,0,0.22)' }} />
-        <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: 76, background: `linear-gradient(160deg, ${theme.soft}, ${theme.card})`, border: `16px solid ${theme.ink}`, outline: '14px solid #ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(3deg)' }}>
-          <div style={{ position: 'absolute', top: 34, left: 38, right: 38, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ width: 720, height: 720, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', width: 670, height: 670, borderRadius: 84, background: theme.shadow, opacity: 0.5, transform: 'rotate(8deg)' }} />
+        <div style={{ position: 'absolute', width: 660, height: 660, borderRadius: 84, background: theme.card, border: `8px solid ${theme.ink}`, transform: 'rotate(-4deg)', boxShadow: '0 34px 70px rgba(0,0,0,0.22)' }} />
+        <div style={{ position: 'absolute', width: 530, height: 530, borderRadius: 76, background: `linear-gradient(160deg, ${theme.soft}, ${theme.card})`, border: `16px solid ${theme.ink}`, outline: '14px solid #ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(3deg)' }}>
+          <div style={{ position: 'absolute', top: 30, left: 34, right: 34, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: theme.accent }}>REDBUBBLE</div>
-            <div style={{ fontSize: 18, fontWeight: 800, borderRadius: 999, background: theme.card, padding: '8px 12px', color: theme.ink }}>{niche}</div>
+            <div style={{ fontSize: 18, fontWeight: 900, borderRadius: 999, background: theme.card, padding: '8px 13px', color: theme.ink }}>{productType}</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 380, marginTop: 84 }}>
+          <div style={{ position: 'absolute', top: 82, borderRadius: 999, background: theme.chip, color: theme.ink, padding: '8px 14px', fontSize: 18, fontWeight: 900 }}>{niche}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 390, marginTop: 92 }}>
             {titleLines.map((line, index) => (
               <div key={`${line}-${index}`} style={{ fontSize: titleLines.length >= 3 ? 48 : 58, lineHeight: 0.98, fontWeight: 1000, color: theme.ink, textAlign: 'center', textTransform: 'uppercase' }}>
                 {line}
               </div>
             ))}
           </div>
-          <div style={{ position: 'absolute', bottom: 34, borderRadius: 999, background: theme.accent, color: '#fff', padding: '14px 22px', fontSize: 22, fontWeight: 900 }}>SHOP DESIGN</div>
+          <div style={{ position: 'absolute', bottom: 34, borderRadius: 999, background: theme.accent, color: '#fff', padding: '14px 22px', fontSize: 22, fontWeight: 900 }}>VIEW DESIGN</div>
         </div>
       </div>
     </div>
   );
 }
 
-function HeroImage({ imageDataUrl, title, niche, theme }: { imageDataUrl: string | null; title: string; niche: string; theme: Theme }) {
+function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDataUrl: string | null; title: string; niche: string; productType: string; theme: Theme }) {
   return (
     <div
       style={{
@@ -295,7 +309,7 @@ function HeroImage({ imageDataUrl, title, niche, theme }: { imageDataUrl: string
           <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 34px rgba(0,0,0,0.22))' }} />
         </div>
       ) : (
-        <MockupFallbackHero title={title} niche={niche} theme={theme} />
+        <MockupFallbackHero title={title} niche={niche} productType={productType} theme={theme} />
       )}
     </div>
   );
@@ -390,6 +404,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const headline = headlineFor(pin, product);
   const caption = captionFor(pin, product);
   const tags = keywordTags(pin, product);
+  const productType = productTypeLabel(product);
   const productImage = await resolvePinterestProductImage(product);
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
@@ -410,7 +425,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
       }}
     >
       <TopBar theme={theme} niche={niche} />
-      <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} theme={theme} />
+      <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} productType={productType} theme={theme} />
       <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     {
