@@ -14,36 +14,56 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
   const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
 
+  const normalizeUrl = (value) => {
+    const url = String(value || '').trim();
+    if (!url) return '';
+    if (url.startsWith('//')) return 'https:' + url;
+    if (url.startsWith('/')) return new URL(url, location.origin).href;
+    return url;
+  };
+
+  const firstSrcsetUrl = (srcset) => String(srcset || '').split(',')[0]?.trim()?.split(/\\s+/)[0] || '';
   const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  const anchors = Array.from(document.querySelectorAll('a[href*="/i/"]'));
+  const anchors = Array.from(document.querySelectorAll('a[href]')).filter((a) => a.href.includes('/i/'));
 
   const captured = anchors
     .map((a) => {
-      const href = a.href;
-      const card = a.closest('article, li, div') || a;
-      const img =
-        card.querySelector('img[src]') ||
-        a.querySelector('img[src]') ||
-        card.querySelector('source[srcset]');
+      const href = normalizeUrl(a.getAttribute('href') || a.href);
+      const card = a.closest('[data-testid], article, li, div') || a;
+      const media = Array.from(new Set([
+        ...Array.from(card.querySelectorAll('img, source')),
+        ...Array.from(a.querySelectorAll('img, source')),
+      ]));
 
       let imageUrl = '';
-      if (img) {
-        imageUrl =
-          img.getAttribute('src') ||
-          img.getAttribute('srcset')?.split(',')[0]?.trim()?.split(' ')[0] ||
-          '';
+      let altText = '';
+      for (const el of media) {
+        const candidateUrls = [
+          el.currentSrc,
+          el.getAttribute('src'),
+          el.getAttribute('data-src'),
+          firstSrcsetUrl(el.getAttribute('srcset')),
+          firstSrcsetUrl(el.getAttribute('data-srcset')),
+        ].map(normalizeUrl).filter(Boolean);
+
+        imageUrl = candidateUrls.find((url) => url.startsWith('http')) || imageUrl;
+        altText = altText || el.getAttribute('alt') || '';
+        if (imageUrl) break;
       }
 
       const title =
         a.getAttribute('aria-label') ||
-        img?.getAttribute('alt') ||
+        card.getAttribute('aria-label') ||
+        a.getAttribute('title') ||
+        altText ||
         a.textContent?.trim() ||
+        card.textContent?.trim() ||
         '';
 
       return {
-        title: title.trim(),
+        title: title.replace(/\\s+/g, ' ').trim(),
         product_url: href,
-        image_url: imageUrl.startsWith('//') ? 'https:' + imageUrl : imageUrl,
+        image_url: imageUrl,
         product_type: '',
         niche: '',
         tags: '',
@@ -56,6 +76,8 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
       item.image_url &&
       item.image_url.startsWith('http')
     );
+
+  console.table(captured);
 
   const merged = Array.from(
     new Map([...existing, ...captured].map((item) => [item.product_url, item])).values()
