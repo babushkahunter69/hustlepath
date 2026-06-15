@@ -57,6 +57,18 @@ function isAllowedProductImageHost(hostname: string) {
   );
 }
 
+function isSpecificRedbubbleProductPageUrl(value: string) {
+  const url = cleanText(value);
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)redbubble\.com$/i.test(parsed.hostname)) return false;
+    return parsed.pathname.split('/').filter(Boolean).includes('i');
+  } catch {
+    return false;
+  }
+}
+
 function sniffImageType(bytes: Uint8Array, declaredType: string) {
   if (SUPPORTED_IMAGE_TYPES.has(declaredType)) return declaredType === 'image/jpg' ? 'image/jpeg' : declaredType;
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
@@ -84,11 +96,11 @@ function absolutizeUrl(value: string, baseUrl: string) {
 
 function extractMetaImageUrl(html: string, pageUrl: string) {
   const patterns = [
-    /<meta[^>]+property=["']og:image:secure_url["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["'][^>]*>/i,
+    /<meta[^>]+property=[\"']og:image:secure_url[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i,
+    /<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i,
+    /<meta[^>]+name=[\"']twitter:image[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i,
+    /<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:image[\"'][^>]*>/i,
+    /<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+name=[\"']twitter:image[\"'][^>]*>/i,
   ];
 
   for (const pattern of patterns) {
@@ -96,11 +108,7 @@ function extractMetaImageUrl(html: string, pageUrl: string) {
     if (match?.[1]) return absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
   }
 
-  const directImageMatch = html.match(/https:\/\/[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
-  if (directImageMatch?.[0]) return directImageMatch[0].replaceAll('&amp;', '&');
-
-  const cdnMatch = html.match(/https:\/\/[^"'\s<>]+(?:redbubble\.net|redbubble\.com|rbcdn|cloudfront\.net)[^"'\s<>]+(?:image|images)[^"'\s<>]*\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
-  return cdnMatch?.[0]?.replaceAll('&amp;', '&') || '';
+  return '';
 }
 
 async function fetchRedbubblePageImageUrl(pageUrl: string) {
@@ -293,22 +301,26 @@ export function pinterestProductImageDebugSummary(result: PinterestProductImageR
 export async function resolvePinterestProductImage(product: any): Promise<PinterestProductImageResult> {
   const explicitImageUrl = cleanText(product?.image_url);
   const targetUrl = cleanText(product?.target_url);
+  const targetIsSpecificRedbubbleProduct = isSpecificRedbubbleProductPageUrl(targetUrl);
   const candidates: string[] = [];
 
   if (isAbsoluteUrl(targetUrl) && isDirectImageUrl(targetUrl)) {
     candidates.push(targetUrl);
   }
 
+  let scrapedTargetImageUrl = '';
   if (isAbsoluteUrl(targetUrl) && !isDirectImageUrl(targetUrl)) {
-    const scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
+    scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
     if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
   }
 
-  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
+  if (!targetIsSpecificRedbubbleProduct) {
+    if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
 
-  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
-    const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
-    if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
+    if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
+      const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
+      if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
+    }
   }
 
   const seen = new Set<string>();
@@ -325,7 +337,12 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   });
 
   if (!uniqueCandidates.length) {
-    const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', isRedbubbleUiAsset(explicitImageUrl) ? 'internal-redbubble-ui-asset' : 'image_url-and-target_url-missing-or-not-absolute');
+    const noCandidateReason = targetIsSpecificRedbubbleProduct
+      ? 'target-url-image-could-not-be-extracted'
+      : isRedbubbleUiAsset(explicitImageUrl)
+        ? 'internal-redbubble-ui-asset'
+        : 'image_url-and-target_url-missing-or-not-absolute';
+    const result = emptyResult(product, [], explicitImageUrl || targetUrl || '', 'no-image-candidates', noCandidateReason);
     console.info('Pinterest product image fallback triggered', pinterestProductImageDebugSummary(result));
     return result;
   }
