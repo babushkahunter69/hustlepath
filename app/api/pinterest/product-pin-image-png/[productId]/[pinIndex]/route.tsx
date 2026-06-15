@@ -287,7 +287,7 @@ function MockupFallbackHero({ title, niche, productType, theme }: { title: strin
   );
 }
 
-function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDataUrl: string | null; title: string; niche: string; productType: string; theme: Theme }) {
+function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: string | null; title: string; niche: string; productType: string; theme: Theme }) {
   return (
     <div
       style={{
@@ -303,7 +303,7 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
         boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
       }}
     >
-      {imageDataUrl ? (
+      {imageSrc ? (
         <div
           style={{
             width: '100%',
@@ -325,21 +325,19 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
               boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.55)',
             }}
           />
-          <div
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageSrc}
+            alt=""
             style={{
               position: 'absolute',
               left: 80,
               right: 80,
               top: 68,
               bottom: 56,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundImage: `url(${imageDataUrl})`,
-              backgroundPosition: 'center center',
-              backgroundRepeat: 'no-repeat',
-              backgroundSize: 'contain',
-              filter: 'drop-shadow(0 34px 36px rgba(0,0,0,0.24))',
+              width: 'calc(100% - 160px)',
+              height: 'calc(100% - 124px)',
+              objectFit: 'contain',
             }}
           />
           <div
@@ -351,7 +349,6 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
               height: 38,
               borderRadius: 999,
               background: 'rgba(0,0,0,0.12)',
-              filter: 'blur(12px)',
             }}
           />
         </div>
@@ -417,7 +414,7 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
   );
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
   const { productId, pinIndex } = await params;
   const index = Number(pinIndex);
 
@@ -453,6 +450,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const tags = keywordTags(pin, product);
   const productType = productTypeLabel(product);
   const productImage = await resolvePinterestProductImage(product);
+  const sourceImageUrl = productImage.hasImage
+    ? new URL(`/api/pinterest/product-source-image/${product.id}`, request.url).toString()
+    : null;
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
@@ -472,13 +472,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
       }}
     >
       <TopBar theme={theme} niche={niche} />
-      <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} productType={productType} theme={theme} />
+      <HeroImage imageSrc={sourceImageUrl} title={headline} niche={niche} productType={productType} theme={theme} />
       <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     {
       width: PIN_WIDTH,
       height: PIN_HEIGHT,
-      headers: pinterestProductImageHeaders(productImage),
+      headers: {
+        ...pinterestProductImageHeaders(productImage),
+        'X-Product-Image-Render-Mode': sourceImageUrl ? 'local-source-route' : 'fallback-mockup',
+      },
     }
   );
 }
