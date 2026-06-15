@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { sanitizeImportedProductTitle } from '@/lib/redbubbleProductSource';
+import { importRedbubbleProduct, isInkWanderStudioProductUrl, isRedbubbleProductUrl, sanitizeImportedProductTitle } from '@/lib/redbubbleProductSource';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -8,6 +8,8 @@ export const revalidate = 0;
 type ProductRow = {
   id: string;
   title?: string | null;
+  description?: string | null;
+  image_url?: string | null;
   source?: string | null;
   target_url?: string | null;
 };
@@ -43,7 +45,7 @@ function looksContaminatedTitle(title: unknown) {
 
 async function fetchImportedRedbubbleProducts() {
   const rows = await sql`
-    select id, title, source, target_url
+    select id, title, description, image_url, source, target_url
     from products
     where source like 'redbubble:%'
        or target_url like 'https://%redbubble.com/%'
@@ -52,27 +54,66 @@ async function fetchImportedRedbubbleProducts() {
   return rows as ProductRow[];
 }
 
+function keywordJson(productType: string, sourceShopName: string | undefined, existingDescription: string, importedDescription: string) {
+  const values = [productType, sourceShopName, existingDescription, importedDescription]
+    .map((value) => cleanText(value))
+    .filter(Boolean);
+  return JSON.stringify(Array.from(new Set(values)));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const products = await fetchImportedRedbubbleProducts();
-    const candidates = products.filter((product) => isImportedRedbubbleProduct(product) && looksContaminatedTitle(product.title));
+    let repairedTitles = 0;
+    let refreshedSources = 0;
+    let skipped = 0;
+    const errors: string[] = [];
 
-    let repaired = 0;
+    for (const product of products) {
+      const targetUrl = cleanText(product.target_url);
+      const originalTitle = cleanText(product.title);
+      const repairedTitle = sanitizeImportedProductTitle(product.title, targetUrl);
 
-    for (const product of candidates) {
-      const repairedTitle = sanitizeImportedProductTitle(product.title, cleanText(product.target_url));
-      if (!repairedTitle || repairedTitle === cleanText(product.title)) continue;
+      if (looksContaminatedTitle(product.title) && repairedTitle && repairedTitle !== originalTitle) {
+        await sql`
+          update products
+          set title = ${repairedTitle},
+              updated_at = now()
+          where id = ${product.id}
+        `;
+        repairedTitles += 1;
+      }
 
+      if (!targetUrl || !isImportedRedbubbleProduct(product) || !isRedbubbleProductUrl(targetUrl) || !isInkWanderStudioProductUrl(targetUrl)) {
+        skipped += 1;
+        continue;
+      }
+
+      const imported = await importRedbubbleProduct(targetUrl);
+      if (!imported.ok) {
+        skipped += 1;
+        if (imported.error) errors.push(`${targetUrl}: ${imported.error}`);
+        continue;
+      }
+
+      const nextTitle = sanitizeImportedProductTitle(imported.title, imported.targetUrl);
       await sql`
         update products
-        set title = ${repairedTitle},
+        set title = ${nextTitle || repairedTitle || originalTitle},
+            description = ${cleanText(imported.description) || cleanText(product.description) || null},
+            target_url = ${imported.targetUrl},
+            image_url = ${imported.imageUrl},
+            keywords = ${keywordJson(imported.productType, imported.sourceShopName, cleanText(product.description), cleanText(imported.description))}::jsonb,
+            status = 'active',
+            source = ${`redbubble:${imported.sourceShopName || 'InkWanderStudio'}`},
             updated_at = now()
         where id = ${product.id}
       `;
-      repaired += 1;
+      refreshedSources += 1;
     }
 
-    return redirectWithNotice(request, `Repaired ${repaired} bad Redbubble product titles.`);
+    const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
+    return redirectWithNotice(request, `Repaired ${repairedTitles} bad Redbubble titles and refreshed ${refreshedSources} Redbubble source records. Skipped ${skipped}.${suffix}`);
   } catch (error: any) {
     return redirectWithNotice(request, `Title repair failed: ${error?.message || 'Unknown error'}`);
   }
