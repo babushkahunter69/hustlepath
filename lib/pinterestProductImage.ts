@@ -1,4 +1,4 @@
-const MAX_REMOTE_IMAGE_BYTES = 6_500_000;
+const MAX_REMOTE_IMAGE_BYTES = 10_000_000;
 const FETCH_TIMEOUT_MS = 8000;
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
@@ -46,6 +46,17 @@ function isRedbubbleUiAsset(value: string) {
   return url.includes('/boom/client/') || url.includes('redbubble logo') || /\.(svg)(\?|#|$)/i.test(url) || /avatar|logo|icon|heart|favorite|placeholder|sprite/.test(url);
 }
 
+function isAllowedProductImageHost(hostname: string) {
+  const host = cleanText(hostname).toLowerCase();
+  return (
+    /^ih\d+\.redbubble\.net$/i.test(host)
+    || host.endsWith('.redbubble.net')
+    || host.endsWith('.redbubble.com')
+    || host.includes('rbcdn')
+    || host.endsWith('.cloudfront.net')
+  );
+}
+
 function sniffImageType(bytes: Uint8Array, declaredType: string) {
   if (SUPPORTED_IMAGE_TYPES.has(declaredType)) return declaredType === 'image/jpg' ? 'image/jpeg' : declaredType;
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
@@ -85,7 +96,10 @@ function extractMetaImageUrl(html: string, pageUrl: string) {
     if (match?.[1]) return absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
   }
 
-  const cdnMatch = html.match(/https:\/\/ih\d?\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
+  const directImageMatch = html.match(/https:\/\/[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
+  if (directImageMatch?.[0]) return directImageMatch[0].replaceAll('&amp;', '&');
+
+  const cdnMatch = html.match(/https:\/\/[^"'\s<>]+(?:redbubble\.net|redbubble\.com|rbcdn|cloudfront\.net)[^"'\s<>]+(?:image|images)[^"'\s<>]*\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
   return cdnMatch?.[0]?.replaceAll('&amp;', '&') || '';
 }
 
@@ -169,6 +183,21 @@ async function fetchImageCandidate(product: any, candidates: string[], sourceUrl
         ...baseResult,
         status: `http-${response.status}`,
         reason: 'non-ok-response',
+        httpStatus: response.status,
+        contentType: declaredType,
+      };
+    }
+
+    if (declaredType.startsWith('text/html')) {
+      const html = await response.text();
+      const nestedImageUrl = extractMetaImageUrl(html, sourceUrl);
+      if (nestedImageUrl && nestedImageUrl !== sourceUrl && !isRedbubbleUiAsset(nestedImageUrl)) {
+        return fetchImageCandidate(product, Array.from(new Set([...candidates, nestedImageUrl])), nestedImageUrl);
+      }
+      return {
+        ...baseResult,
+        status: 'html-instead-of-image',
+        reason: 'candidate-returned-html',
         httpStatus: response.status,
         contentType: declaredType,
       };
@@ -287,6 +316,12 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     if (seen.has(candidate)) return false;
     seen.add(candidate);
     return true;
+  }).filter((candidate) => {
+    try {
+      return isAllowedProductImageHost(new URL(candidate).hostname);
+    } catch {
+      return false;
+    }
   });
 
   if (!uniqueCandidates.length) {
