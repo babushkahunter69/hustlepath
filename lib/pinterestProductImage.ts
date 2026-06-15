@@ -295,13 +295,6 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   const targetUrl = cleanText(product?.target_url);
   const candidates: string[] = [];
 
-  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
-
-  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
-    const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
-    if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
-  }
-
   if (isAbsoluteUrl(targetUrl) && isDirectImageUrl(targetUrl)) {
     candidates.push(targetUrl);
   }
@@ -309,6 +302,13 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   if (isAbsoluteUrl(targetUrl) && !isDirectImageUrl(targetUrl)) {
     const scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
     if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
+  }
+
+  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
+
+  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
+    const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
+    if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
   }
 
   const seen = new Set<string>();
