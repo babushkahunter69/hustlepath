@@ -1,5 +1,6 @@
 const FETCH_TIMEOUT_MS = 9000;
 const DEFAULT_SHOP_URL = 'https://www.redbubble.com/people/InkWanderStudio/shop';
+const EXPECTED_SHOP_NAME = 'InkWanderStudio';
 const SHOP_PROFILE_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+(?:\/shop)?\/?(?:[?#].*)?$/i;
 const SHOP_URL_RE = /^https?:\/\/(?:www\.)?redbubble\.com\/people\/[^/?#]+\/shop\/?(?:[?#].*)?$/i;
 const REDBUBBLE_HOST_RE = /(^|\.)redbubble\.com$/i;
@@ -52,6 +53,24 @@ function decodeHtml(value: string) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .trim();
+}
+
+export function getRedbubbleProductArtistName(productUrl: string) {
+  try {
+    const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const index = parts.indexOf('i');
+    const slug = parts[index + 2] || parts.find((part) => part.includes('-by-')) || '';
+    const artist = slug.match(/-by-([^/]+)$/i)?.[1] || '';
+    return cleanText(artist);
+  } catch {
+    return '';
+  }
+}
+
+export function isInkWanderStudioProductUrl(productUrl: unknown) {
+  const url = cleanText(productUrl);
+  if (!url) return false;
+  return getRedbubbleProductArtistName(url).toLowerCase() === EXPECTED_SHOP_NAME.toLowerCase();
 }
 
 export function deriveRedbubbleTitleFromProductUrl(productUrl: string) {
@@ -174,6 +193,17 @@ export function validateProductSource(product: { target_url?: unknown; image_url
       status: 'invalid',
       label: 'Invalid',
       reason: 'Use a specific Redbubble product/design URL, not the shop or profile URL.',
+      hasAbsoluteTargetUrl,
+      hasAbsoluteImageUrl,
+      isShopProfileUrl,
+    };
+  }
+
+  if (!isInkWanderStudioProductUrl(targetUrl)) {
+    return {
+      status: 'invalid',
+      label: 'Invalid',
+      reason: 'This Redbubble product does not belong to InkWanderStudio.',
       hasAbsoluteTargetUrl,
       hasAbsoluteImageUrl,
       isShopProfileUrl,
@@ -305,7 +335,7 @@ function tagsFromText(title: string, description: string, productType: string) {
   if (/millennial|adulting|burnout|nostalgia/.test(text)) tags.add('millennial humor');
   if (/animal|cat|dog|frog|goose|duck/.test(text)) tags.add('sarcastic animals');
   tags.add('relatable stickers');
-  tags.add('InkWanderStudio');
+  tags.add(EXPECTED_SHOP_NAME);
   return Array.from(tags).slice(0, 8);
 }
 
@@ -313,9 +343,9 @@ function shopNameFromUrl(shopUrl: string) {
   try {
     const parts = new URL(shopUrl).pathname.split('/').filter(Boolean);
     const peopleIndex = parts.findIndex((part) => part.toLowerCase() === 'people');
-    return peopleIndex >= 0 ? decodeURIComponent(parts[peopleIndex + 1] || 'InkWanderStudio') : 'InkWanderStudio';
+    return peopleIndex >= 0 ? decodeURIComponent(parts[peopleIndex + 1] || EXPECTED_SHOP_NAME) : EXPECTED_SHOP_NAME;
   } catch {
-    return 'InkWanderStudio';
+    return EXPECTED_SHOP_NAME;
   }
 }
 
@@ -354,14 +384,14 @@ function discoverProductUrlsFromShopHtml(html: string, shopUrl: string) {
     for (const match of decodedHtml.matchAll(pattern)) {
       const candidate = match[1] || match[0];
       const productUrl = canonicalProductUrl(candidate, shopUrl);
-      if (isRedbubbleProductUrl(productUrl)) urls.add(productUrl);
+      if (isRedbubbleProductUrl(productUrl) && isInkWanderStudioProductUrl(productUrl)) urls.add(productUrl);
     }
   }
 
   return Array.from(urls).slice(0, 36);
 }
 
-export async function importRedbubbleProduct(productUrl: string, sourceShopName = 'InkWanderStudio'): Promise<RedbubbleImportResult> {
+export async function importRedbubbleProduct(productUrl: string, sourceShopName = EXPECTED_SHOP_NAME): Promise<RedbubbleImportResult> {
   const targetUrl = canonicalProductUrl(cleanText(productUrl));
   if (!isRedbubbleProductUrl(targetUrl)) {
     return {
@@ -374,6 +404,20 @@ export async function importRedbubbleProduct(productUrl: string, sourceShopName 
       tags: [],
       sourceShopName,
       error: 'Enter a specific Redbubble product/design URL, not a shop or profile URL.',
+    };
+  }
+
+  if (!isInkWanderStudioProductUrl(targetUrl)) {
+    return {
+      ok: false,
+      title: '',
+      description: '',
+      targetUrl,
+      imageUrl: '',
+      productType: '',
+      tags: [],
+      sourceShopName,
+      error: 'That Redbubble product belongs to a different artist, not InkWanderStudio.',
     };
   }
 
@@ -402,7 +446,7 @@ export async function importRedbubbleProduct(productUrl: string, sourceShopName 
     const tags = Array.from(new Set([...tagsFromText(title, description, productType), sourceShopName])).slice(0, 8);
 
     return {
-      ok: Boolean(title && imageUrl && isRedbubbleProductUrl(resolvedTargetUrl) && isRedbubbleProductImageUrl(imageUrl)),
+      ok: Boolean(title && imageUrl && isInkWanderStudioProductUrl(resolvedTargetUrl) && isRedbubbleProductUrl(resolvedTargetUrl) && isRedbubbleProductImageUrl(imageUrl)),
       title,
       description,
       targetUrl: resolvedTargetUrl,
