@@ -133,6 +133,8 @@ function designNameFromUrl(value: unknown) {
 
 function productTypeLabel(product: any) {
   const haystack = `${cleanText(product?.target_url)} ${parseKeywords(product?.keywords).join(' ')}`.toLowerCase();
+  if (/mouse-pad|mouse pad|mousepad/.test(haystack)) return 'Mouse Pad';
+  if (/throw-pillow|pillow/.test(haystack)) return 'Throw Pillow';
   if (/classic-t-shirt|t-shirt|shirt|tee/.test(haystack)) return 'T-Shirt';
   if (/mug|coffee-cup/.test(haystack)) return 'Mug';
   if (/poster|print/.test(haystack)) return 'Print';
@@ -172,26 +174,28 @@ function headlineFor(pin: any, product: any) {
   }
 
   const niche = nicheLabel(pin, product).toLowerCase();
-  if (niche.includes('coffee')) return `${design} Coffee Sticker`;
-  if (niche.includes('introvert')) return `${design} Introvert Sticker`;
-  if (niche.includes('millennial')) return `${design} Millennial Sticker`;
-  if (niche.includes('animal')) return `${design} Sarcastic Sticker`;
-  if (niche.includes('relatable')) return `${design} Relatable Sticker`;
-  return `${design} Sticker`;
+  const productType = productTypeLabel(product);
+  if (niche.includes('coffee')) return `${design} Coffee ${productType}`;
+  if (niche.includes('introvert')) return `${design} Introvert ${productType}`;
+  if (niche.includes('millennial')) return `${design} Millennial ${productType}`;
+  if (niche.includes('animal')) return `${design} Sarcastic ${productType}`;
+  if (niche.includes('relatable')) return `${design} Relatable ${productType}`;
+  return `${design} ${productType}`;
 }
 
 function captionFor(pin: any, product: any) {
   const design = designName(pin, product);
   const niche = nicheLabel(pin, product).toLowerCase();
+  const productType = productTypeLabel(product).toLowerCase();
   const raw = cleanText(pin?.description);
   const generic = !raw || /unique redbubble|trending redbubble|perfect gifts|seasonal gift ideas|category pin/i.test(raw) || /captured from browser/i.test(raw);
 
   if (!generic) return clampSentence(raw, 132);
-  if (niche.includes('coffee')) return `${design} brings coffee culture humor to stickers, mugs, laptops, and cozy desk setups.`;
-  if (niche.includes('introvert')) return `${design} is a relatable introvert humor design for laptops, notebooks, mugs, and quiet-day gifts.`;
-  if (niche.includes('millennial')) return `${design} turns millennial humor into a specific Redbubble design worth saving for later.`;
-  if (niche.includes('animal')) return `${design} gives sarcastic animal art a giftable Redbubble look for stickers, tees, and mugs.`;
-  return `${design} is a design-specific Redbubble find for relatable stickers, gifts, notebooks, and everyday favorites.`;
+  if (niche.includes('coffee')) return `${design} brings coffee culture humor to this ${productType} for cozy desks, gift boards, and save-worthy Redbubble finds.`;
+  if (niche.includes('introvert')) return `${design} turns introvert humor into a specific ${productType} for quiet-day gifts, notebooks, and desk setups.`;
+  if (niche.includes('millennial')) return `${design} gives millennial humor a design-specific ${productType} angle that feels worth saving.`;
+  if (niche.includes('animal')) return `${design} gives sarcastic animal art a giftable ${productType} look for niche Redbubble boards.`;
+  return `${design} is a design-specific Redbubble ${productType} for relatable humor boards, gifts, and everyday favorites.`;
 }
 
 function keywordTags(pin: any, product: any) {
@@ -287,7 +291,7 @@ function MockupFallbackHero({ title, niche, productType, theme }: { title: strin
   );
 }
 
-function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDataUrl: string | null; title: string; niche: string; productType: string; theme: Theme }) {
+function HeroImage({ heroImageSrc, title, niche, productType, theme }: { heroImageSrc: string | null; title: string; niche: string; productType: string; theme: Theme }) {
   return (
     <div
       style={{
@@ -303,7 +307,7 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
         boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
       }}
     >
-      {imageDataUrl ? (
+      {heroImageSrc ? (
         <div
           style={{
             width: '100%',
@@ -332,7 +336,7 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={imageDataUrl}
+              src={heroImageSrc}
               alt=""
               width={680}
               height={680}
@@ -414,7 +418,7 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
   );
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
   const { productId, pinIndex } = await params;
   const index = Number(pinIndex);
 
@@ -450,6 +454,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const tags = keywordTags(pin, product);
   const productType = productTypeLabel(product);
   const productImage = await resolvePinterestProductImage(product);
+  const origin = new URL(request.url).origin;
+  const heroImageSrc = productImage.hasImage ? `${origin}/api/pinterest/product-source-image/${productId}` : null;
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
@@ -469,7 +475,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
       }}
     >
       <TopBar theme={theme} niche={niche} />
-      <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} productType={productType} theme={theme} />
+      <HeroImage heroImageSrc={heroImageSrc} title={headline} niche={niche} productType={productType} theme={theme} />
       <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     {
@@ -477,7 +483,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
       height: PIN_HEIGHT,
       headers: {
         ...pinterestProductImageHeaders(productImage),
-        'X-Product-Image-Render-Mode': productImage.dataUrl ? 'fetched-data-url' : 'fallback-mockup',
+        'X-Product-Image-Render-Mode': heroImageSrc ? 'local-source-route' : 'fallback-mockup',
       },
     }
   );
