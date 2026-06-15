@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import BrowserJsonImportPreview from './BrowserJsonImportPreview';
 import { sql } from '@/lib/db';
 import { parseKeywords } from '@/lib/monetization';
-import { importRedbubbleProduct, importRedbubbleShopProducts, isRedbubbleProductUrl, sanitizeImportedProductTitle, validateProductSource } from '@/lib/redbubbleProductSource';
+import { importRedbubbleProduct, importRedbubbleShopProducts, isInkWanderStudioProductUrl, isRedbubbleProductUrl, sanitizeImportedProductTitle, validateProductSource } from '@/lib/redbubbleProductSource';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -17,6 +17,7 @@ const UI_ASSET_WARNING = 'This product has a Redbubble UI asset instead of a pro
 const BROWSER_IMPORT_SNIPPET = `(() => {
   const STORAGE_KEY = 'hpd_redbubble_products';
   const shopName = 'InkWanderStudio';
+  const expectedArtist = 'inkwanderstudio';
   const BAD_LABELS = new Set(['favorite', 'add to favorites', 'add to cart', 'cart']);
   const BAD_TITLE_PREFIXES = ['tags:', 'from $', '$', 'favorite', 'add to cart'];
 
@@ -71,6 +72,18 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
   };
   const tileFor = (el) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
   const uniqueBy = (items, keyFn) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
+  const artistFromProductUrl = (productUrl) => {
+    try {
+      const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      const index = parts.indexOf('i');
+      const slug = parts[index + 2] || parts.find((part) => part.includes('-by-')) || '';
+      const match = slug.match(/-by-([^/]+)$/i);
+      return clean(match?.[1] || '').toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+  const isInkWanderStudioProductUrl = (productUrl) => artistFromProductUrl(productUrl) === expectedArtist;
   const isBadLabel = (value) => BAD_LABELS.has(clean(value).toLowerCase());
   const isBadTitleText = (value) => {
     const text = clean(value).toLowerCase();
@@ -90,7 +103,7 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     if (isBadLabel(link.getAttribute('aria-label')) || isBadLabel(link.getAttribute('title'))) return false;
     try {
       const url = new URL(normalizeUrl(link.getAttribute('href') || link.href), location.origin);
-      return url.hostname.toLowerCase().includes('redbubble.com') && url.pathname.split('/').includes('i');
+      return url.hostname.toLowerCase().includes('redbubble.com') && url.pathname.split('/').includes('i') && isInkWanderStudioProductUrl(url.toString());
     } catch {
       return false;
     }
@@ -213,6 +226,10 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
       rejectReasons.push({ image_url: imageItem.imageUrl, reason: 'no product link' });
       return;
     }
+    if (!isInkWanderStudioProductUrl(matchedLink.productUrl)) {
+      rejectReasons.push({ product_url: matchedLink.productUrl, reason: 'different artist' });
+      return;
+    }
     const title = titleFromLink(matchedLink.element, matchedLink.productUrl, imageItem.alt);
     if (!title || isBadTitleText(title) || looksLikePrice(title)) {
       rejectReasons.push({ product_url: matchedLink.productUrl, reason: 'bad title', title });
@@ -237,6 +254,10 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     const linkItem = remainingLinks[index];
     const imageItem = productImages[index];
     if (!linkItem || !imageItem) continue;
+    if (!isInkWanderStudioProductUrl(linkItem.productUrl)) {
+      rejectReasons.push({ product_url: linkItem.productUrl, reason: 'different artist' });
+      continue;
+    }
     const title = titleFromLink(linkItem.element, linkItem.productUrl, imageItem.alt);
     if (!title || isBadTitleText(title) || looksLikePrice(title)) {
       rejectReasons.push({ product_url: linkItem.productUrl, reason: 'bad title', title });
@@ -460,6 +481,7 @@ async function insertBrowserCapturedProduct(input: {
   const normalizedTitle = sanitizeImportedProductTitle(input.title, input.targetUrl);
   if (isBadBrowserTitle(normalizedTitle)) return { inserted: false, skipped: true, reason: 'bad product title' };
   if (!isSpecificRedbubbleProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url must be an absolute Redbubble /i/... product URL' };
+  if (!isInkWanderStudioProductUrl(input.targetUrl)) return { inserted: false, skipped: true, reason: 'product_url belongs to a different artist, not InkWanderStudio' };
   if (!isRedbubbleProductImageUrl(input.imageUrl)) return { inserted: false, skipped: true, reason: 'image_url must be a visible Redbubble product image URL, not an avatar or UI asset' };
   if (await productExists(input.targetUrl)) return { inserted: false, skipped: true, reason: 'duplicate' };
 
@@ -764,6 +786,12 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
           <button type="submit" className="primary-link">Delete bad Redbubble image imports</button>
         </form>
 
+        <form action="/admin/products/delete-non-inkwanderstudio-imports" method="post" className="product-form admin-section">
+          <h2>Delete non-InkWanderStudio imports</h2>
+          <p className="admin-muted">Remove saved Redbubble products whose specific product URL belongs to a different artist. This cleans up mixed CSV, browser, or older scraper imports so only InkWanderStudio products stay Ready.</p>
+          <button type="submit" className="primary-link">Delete non-InkWanderStudio imports</button>
+        </form>
+
         <form action="/admin/products/repair-redbubble-product-titles" method="post" className="product-form admin-section">
           <h2>Repair bad Redbubble product titles</h2>
           <p className="admin-muted">Fix imported product titles that accidentally captured Redbubble HTML, icon markup, or price strings instead of the real design title.</p>
@@ -801,7 +829,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
 
         <form action={browserJsonRedbubbleProductsAction} className="product-form admin-section">
           <h2>Browser JSON import</h2>
-          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Review the validation summary first; rows with bad titles, non-product URLs, SVGs, avatars, /boom/client URLs, or UI asset images are skipped.</p>
+          <p className="admin-muted">Paste the final accumulated JSON copied by the browser snippet. Review the validation summary first; rows with bad titles, non-product URLs, foreign-artist product URLs, SVGs, avatars, /boom/client URLs, or UI asset images are skipped.</p>
           <BrowserJsonImportPreview />
           <button type="submit" className="primary-link">Import browser JSON</button>
         </form>
