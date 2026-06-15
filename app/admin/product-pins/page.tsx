@@ -226,7 +226,7 @@ export default async function ProductPinsPage({ searchParams }: { searchParams?:
                     <Link href={`/go/product/${product.id}`} className="secondary-link small" target="_blank">
                       Test product
                     </Link>
-                    <Link href="/admin/products" className="secondary-link small">
+                    <Link href={`/admin/products#product-${product.id}`} className="secondary-link small">
                       Fix source data
                     </Link>
                     <form action={productPinsAction}>
