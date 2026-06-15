@@ -55,6 +55,11 @@ function decodeHtml(value: string) {
     .trim();
 }
 
+function headHtml(html: string) {
+  const match = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  return match?.[1] || html;
+}
+
 export function getRedbubbleProductArtistName(productUrl: string) {
   try {
     const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
@@ -113,7 +118,7 @@ export function sanitizeImportedProductTitle(title: unknown, productUrl = '') {
 
   cleaned = cleanText(cleaned)
     .replace(/\s{2,}/g, ' ')
-    .replace(/[|•]+$/g, '')
+    .replace(/[|\u2022]+$/g, '')
     .trim();
 
   if (!cleaned || looksContaminatedTitle(cleaned) || cleaned.length < 4) return fallbackTitle;
@@ -260,13 +265,14 @@ function redbubbleBlockedMessage(kind: 'shop' | 'product') {
 
 function metaContent(html: string, key: string, attr = 'property') {
   const escapedKey = key.replaceAll(':', '\\:');
+  const scopedHtml = headHtml(html);
   const direct = new RegExp(`<meta[^>]+${attr}=["']${escapedKey}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
   const reverse = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+${attr}=["']${escapedKey}["'][^>]*>`, 'i');
-  return decodeHtml(html.match(direct)?.[1] || html.match(reverse)?.[1] || '');
+  return decodeHtml(scopedHtml.match(direct)?.[1] || scopedHtml.match(reverse)?.[1] || '');
 }
 
 function canonicalUrl(html: string, fallbackUrl: string) {
-  const href = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i)?.[1];
+  const href = headHtml(html).match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i)?.[1];
   if (!href) return fallbackUrl;
   try {
     return new URL(decodeHtml(href), fallbackUrl).toString();
@@ -291,7 +297,7 @@ function titleFromHtml(html: string, targetUrl = '') {
     cleanText(
       metaContent(html, 'og:title') ||
       metaContent(html, 'twitter:title', 'name') ||
-      decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
+      decodeHtml(headHtml(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
     )
       .replace(/\s*\|\s*Redbubble\s*$/i, '')
       .replace(/\s*by\s+InkWanderStudio\s*$/i, '')
@@ -301,11 +307,12 @@ function titleFromHtml(html: string, targetUrl = '') {
 }
 
 function imageFromHtml(html: string, pageUrl: string) {
+  const scopedHtml = headHtml(html);
   const candidate =
-    metaContent(html, 'og:image:secure_url') ||
-    metaContent(html, 'og:image') ||
-    metaContent(html, 'twitter:image', 'name') ||
-    html.match(/https:\/\/ih[01]\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i)?.[0] ||
+    metaContent(scopedHtml, 'og:image:secure_url') ||
+    metaContent(scopedHtml, 'og:image') ||
+    metaContent(scopedHtml, 'twitter:image', 'name') ||
+    scopedHtml.match(/https:\/\/ih[01]\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i)?.[0] ||
     '';
 
   try {
@@ -318,7 +325,9 @@ function imageFromHtml(html: string, pageUrl: string) {
 function productTypeFromUrlOrTitle(url: string, title: string) {
   const haystack = `${url} ${title}`.toLowerCase();
   if (haystack.includes('classic-t-shirt') || haystack.includes('t-shirt') || haystack.includes('shirt')) return 'T-Shirt';
+  if (haystack.includes('mouse-pad') || haystack.includes('mouse pad') || haystack.includes('mousepad')) return 'Mouse Pad';
   if (haystack.includes('mug')) return 'Mug';
+  if (haystack.includes('throw-pillow') || haystack.includes('pillow')) return 'Throw Pillow';
   if (haystack.includes('poster') || haystack.includes('print')) return 'Print';
   if (haystack.includes('notebook')) return 'Notebook';
   if (haystack.includes('phone-case')) return 'Phone Case';
