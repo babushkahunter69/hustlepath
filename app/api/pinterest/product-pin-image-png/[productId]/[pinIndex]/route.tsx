@@ -309,46 +309,46 @@ function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: s
             width: '100%',
             height: '100%',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            position: 'relative',
-            overflow: 'hidden',
+            gap: 18,
             background: `radial-gradient(circle at 50% 28%, ${theme.card} 0%, ${theme.chip} 58%, ${theme.soft} 100%)`,
+            padding: '48px 56px 36px',
           }}
         >
           <div
             style={{
-              position: 'absolute',
-              inset: 40,
-              borderRadius: 36,
-              background: 'rgba(255,255,255,0.5)',
-              boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.55)',
+              width: 760,
+              height: 760,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 40,
+              background: 'rgba(255,255,255,0.42)',
+              boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.6)',
+              padding: 24,
             }}
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageSrc}
-            alt=""
-            style={{
-              position: 'absolute',
-              left: 80,
-              right: 80,
-              top: 68,
-              bottom: 56,
-              width: 'calc(100% - 160px)',
-              height: 'calc(100% - 124px)',
-              objectFit: 'contain',
-            }}
-          />
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageSrc}
+              alt=""
+              width={680}
+              height={680}
+              style={{
+                width: 680,
+                height: 680,
+                objectFit: 'contain',
+              }}
+            />
+          </div>
           <div
             style={{
-              position: 'absolute',
-              left: 180,
-              right: 180,
-              bottom: 34,
-              height: 38,
+              width: 420,
+              height: 28,
               borderRadius: 999,
-              background: 'rgba(0,0,0,0.12)',
+              background: 'rgba(0,0,0,0.08)',
             }}
           />
         </div>
