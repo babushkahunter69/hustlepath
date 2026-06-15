@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, type Page } from 'playwright';
-import { sanitizeImportedProductTitle } from '../lib/redbubbleProductSource';
+import { isInkWanderStudioProductUrl, sanitizeImportedProductTitle } from '../lib/redbubbleProductSource';
 
 type ProductRow = {
   title: string;
@@ -406,7 +406,7 @@ async function main() {
 
       for (const row of result.rows) {
         const safeTitle = sanitizeImportedProductTitle(row.title, row.product_url);
-        if (!row.product_url || !row.image_url || hasBadTitle(safeTitle) || hasBadImageUrl(row.image_url)) continue;
+        if (!row.product_url || !row.image_url || !isInkWanderStudioProductUrl(row.product_url) || hasBadTitle(safeTitle) || hasBadImageUrl(row.image_url)) continue;
         if (!rowsByUrl.has(row.product_url)) {
           rowsByUrl.set(row.product_url, {
             ...row,
