@@ -104,20 +104,91 @@ function normalizedKeywords(input: ProductCampaignInput) {
     .slice(0, 8);
 }
 
+function productUrlHints(targetUrl: string) {
+  const empty = { productType: '', designName: '' };
+  const url = cleanText(targetUrl);
+  if (!url) return empty;
+
+  try {
+    const parts = new URL(url).pathname
+      .split('/')
+      .filter(Boolean)
+      .map((value) => decodeURIComponent(value));
+    const productIndex = parts.findIndex((part) => part.toLowerCase() === 'i');
+    if (productIndex === -1) return empty;
+
+    const rawProductType = cleanText(parts[productIndex + 1]).toLowerCase();
+    const rawDesignSlug = cleanText(parts[productIndex + 2]);
+
+    const productTypeMap: Record<string, string> = {
+      'sticker': 'Sticker',
+      'mouse-pad': 'Mouse Pad',
+      'mug': 'Mug',
+      'classic-t-shirt': 'Graphic Tee',
+      't-shirt': 'Graphic Tee',
+      'tank-top': 'Tank Top',
+      'throw-pillow': 'Throw Pillow',
+      'poster': 'Poster',
+      'art-print': 'Art Print',
+      'greeting-card': 'Greeting Card',
+      'notebook': 'Notebook',
+      'spiral-notebook': 'Notebook',
+      'pin': 'Pin',
+      'pouch': 'Zipper Pouch',
+      'iphone-case': 'Phone Case',
+      'samsung-case': 'Phone Case',
+      'laptop-skin': 'Laptop Skin',
+      'laptop-case': 'Laptop Case',
+      'tote-bag': 'Tote Bag',
+      'travel-mug': 'Travel Mug',
+      'magnet': 'Magnet',
+      'postcard': 'Postcard',
+      'scarf': 'Scarf',
+    };
+
+    const designName = titleCase(
+      cleanText(
+        rawDesignSlug
+          .replace(/-by-.+$/i, '')
+          .replace(/-/g, ' ')
+      )
+    );
+
+    return {
+      productType: productTypeMap[rawProductType] || titleCase(rawProductType.replace(/-/g, ' ')),
+      designName,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 function productTypeHint(input: ProductCampaignInput) {
+  const hints = productUrlHints(input.target_url);
+  if (hints.productType) return hints.productType;
+
   const haystack = [input.title, input.description, ...normalizedKeywords(input)].join(' ').toLowerCase();
+  if (haystack.includes('mouse pad') || haystack.includes('mousepad')) return 'Mouse Pad';
+  if (haystack.includes('pillow')) return 'Throw Pillow';
   if (haystack.includes('mug')) return 'Mug';
   if (haystack.includes('shirt') || haystack.includes('tee')) return 'Graphic Tee';
-  if (haystack.includes('notebook')) return 'Notebook Sticker';
-  return 'Sticker';
+  if (haystack.includes('notebook')) return 'Notebook';
+  if (haystack.includes('poster') || haystack.includes('print')) return 'Poster';
+  if (haystack.includes('phone case') || haystack.includes('iphone case')) return 'Phone Case';
+  if (haystack.includes('tote bag')) return 'Tote Bag';
+  if (haystack.includes('pin')) return 'Pin';
+  if (haystack.includes('sticker')) return 'Sticker';
+  return 'Redbubble Design';
 }
 
 function designFocus(input: ProductCampaignInput) {
+  const hints = productUrlHints(input.target_url);
   const cleaned = cleanText(input.title, 'InkWanderStudio Design')
     .replace(/\b(redbubble|stickers?|shirts?|tees?|mugs?|gifts?|designs?|prints?)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return titleCase(wordsUnder(cleaned || input.title || 'InkWanderStudio Design', 52));
+  const baseDesign = hints.designName || cleaned || input.title || 'InkWanderStudio Design';
+  return titleCase(wordsUnder(baseDesign, 52));
 }
 
 function keywordFocus(input: ProductCampaignInput) {
