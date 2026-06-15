@@ -287,7 +287,7 @@ function MockupFallbackHero({ title, niche, productType, theme }: { title: strin
   );
 }
 
-function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: string | null; title: string; niche: string; productType: string; theme: Theme }) {
+function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDataUrl: string | null; title: string; niche: string; productType: string; theme: Theme }) {
   return (
     <div
       style={{
@@ -303,7 +303,7 @@ function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: s
         boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
       }}
     >
-      {imageSrc ? (
+      {imageDataUrl ? (
         <div
           style={{
             width: '100%',
@@ -332,7 +332,7 @@ function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: s
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={imageSrc}
+              src={imageDataUrl}
               alt=""
               width={680}
               height={680}
@@ -414,7 +414,7 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
   );
 }
 
-export async function GET(request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
   const { productId, pinIndex } = await params;
   const index = Number(pinIndex);
 
@@ -450,9 +450,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ prod
   const tags = keywordTags(pin, product);
   const productType = productTypeLabel(product);
   const productImage = await resolvePinterestProductImage(product);
-  const sourceImageUrl = productImage.hasImage
-    ? new URL(`/api/pinterest/product-source-image/${product.id}`, request.url).toString()
-    : null;
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
@@ -472,7 +469,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prod
       }}
     >
       <TopBar theme={theme} niche={niche} />
-      <HeroImage imageSrc={sourceImageUrl} title={headline} niche={niche} productType={productType} theme={theme} />
+      <HeroImage imageDataUrl={productImage.dataUrl} title={headline} niche={niche} productType={productType} theme={theme} />
       <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>,
     {
@@ -480,7 +477,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prod
       height: PIN_HEIGHT,
       headers: {
         ...pinterestProductImageHeaders(productImage),
-        'X-Product-Image-Render-Mode': sourceImageUrl ? 'local-source-route' : 'fallback-mockup',
+        'X-Product-Image-Render-Mode': productImage.dataUrl ? 'fetched-data-url' : 'fallback-mockup',
       },
     }
   );
