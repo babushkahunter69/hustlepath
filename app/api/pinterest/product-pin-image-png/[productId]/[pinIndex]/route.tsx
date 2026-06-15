@@ -304,9 +304,56 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
       }}
     >
       {imageDataUrl ? (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(180deg, ${theme.card}, ${theme.chip})`, padding: 8 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 34px rgba(0,0,0,0.22))' }} />
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            background: `radial-gradient(circle at 50% 28%, ${theme.card} 0%, ${theme.chip} 58%, ${theme.soft} 100%)`,
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              inset: 40,
+              borderRadius: 36,
+              background: 'rgba(255,255,255,0.5)',
+              boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.55)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: 80,
+              right: 80,
+              top: 68,
+              bottom: 56,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundImage: `url(${imageDataUrl})`,
+              backgroundPosition: 'center center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: 'contain',
+              filter: 'drop-shadow(0 34px 36px rgba(0,0,0,0.24))',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: 180,
+              right: 180,
+              bottom: 34,
+              height: 38,
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.12)',
+              filter: 'blur(12px)',
+            }}
+          />
         </div>
       ) : (
         <MockupFallbackHero title={title} niche={niche} productType={productType} theme={theme} />
