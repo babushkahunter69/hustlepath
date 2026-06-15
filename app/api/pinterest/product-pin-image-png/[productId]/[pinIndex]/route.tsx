@@ -271,7 +271,7 @@ function MockupFallbackHero({ title, niche, productType, theme }: { title: strin
       <div style={{ width: 720, height: 720, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ position: 'absolute', width: 670, height: 670, borderRadius: 84, background: theme.shadow, opacity: 0.5, transform: 'rotate(8deg)' }} />
         <div style={{ position: 'absolute', width: 660, height: 660, borderRadius: 84, background: theme.card, border: `8px solid ${theme.ink}`, transform: 'rotate(-4deg)', boxShadow: '0 34px 70px rgba(0,0,0,0.22)' }} />
-        <div style={{ position: 'absolute', width: 530, height: 530, borderRadius: 76, background: `linear-gradient(160deg, ${theme.soft}, ${theme.card})`, border: `16px solid ${theme.ink}`, outline: '14px solid #ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(3deg)' }}>
+        <div style={{ position: 'absolute', width: 530, height: 530, borderRadius: 76, background: `linear-gradient(160deg, ${theme.soft}, ${theme.card})`, border: `16px solid ${theme.ink}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'rotate(3deg)' }}>
           <div style={{ position: 'absolute', top: 30, left: 34, right: 34, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: theme.accent }}>REDBUBBLE</div>
             <div style={{ fontSize: 18, fontWeight: 900, borderRadius: 999, background: theme.card, padding: '8px 13px', color: theme.ink }}>{productType}</div>
@@ -291,7 +291,7 @@ function MockupFallbackHero({ title, niche, productType, theme }: { title: strin
   );
 }
 
-function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDataUrl: string | null; title: string; niche: string; productType: string; theme: Theme }) {
+function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: string | null; title: string; niche: string; productType: string; theme: Theme }) {
   return (
     <div
       style={{
@@ -307,7 +307,7 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
         boxShadow: '0 24px 60px rgba(0,0,0,0.14)',
       }}
     >
-      {imageDataUrl ? (
+      {imageSrc ? (
         <div
           style={{
             width: '100%',
@@ -336,7 +336,7 @@ function HeroImage({ imageDataUrl, title, niche, productType, theme }: { imageDa
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={imageDataUrl}
+              src={imageSrc}
               alt=""
               style={{
                 width: 680,
@@ -416,7 +416,7 @@ function BottomCopy({ title, caption, tags, theme }: { title: string; caption: s
   );
 }
 
-function buildPinMarkup({ pin, product, theme, imageDataUrl }: { pin: any; product: any; theme: Theme; imageDataUrl: string | null }) {
+function buildPinMarkup({ pin, product, theme, imageSrc }: { pin: any; product: any; theme: Theme; imageSrc: string | null }) {
   const niche = nicheLabel(pin, product);
   const headline = headlineFor(pin, product);
   const caption = captionFor(pin, product);
@@ -439,13 +439,13 @@ function buildPinMarkup({ pin, product, theme, imageDataUrl }: { pin: any; produ
       }}
     >
       <TopBar theme={theme} niche={niche} />
-      <HeroImage imageDataUrl={imageDataUrl} title={headline} niche={niche} productType={productType} theme={theme} />
+      <HeroImage imageSrc={imageSrc} title={headline} niche={niche} productType={productType} theme={theme} />
       <BottomCopy title={headline} caption={caption} tags={tags} theme={theme} />
     </div>
   );
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ productId: string; pinIndex: string }> }) {
   const { productId, pinIndex } = await params;
   const index = Number(pinIndex);
 
@@ -476,18 +476,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const pin = getPin(product.pinterest_meta, index);
   const theme = themeFor(index);
   const productImage = await resolvePinterestProductImage(product);
+  const sourceImageUrl = productImage.hasImage
+    ? new URL(`/api/pinterest/product-source-image/${productId}`, request.url).toString()
+    : null;
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
   try {
     return new ImageResponse(
-      buildPinMarkup({ pin, product, theme, imageDataUrl: productImage.dataUrl }),
+      buildPinMarkup({ pin, product, theme, imageSrc: sourceImageUrl }),
       {
         width: PIN_WIDTH,
         height: PIN_HEIGHT,
         headers: {
           ...pinterestProductImageHeaders(productImage),
-          'X-Product-Image-Render-Mode': productImage.dataUrl ? 'inline-data-url' : 'fallback-mockup',
+          'X-Product-Image-Render-Mode': sourceImageUrl ? 'local-source-route' : 'fallback-mockup',
         },
       }
     );
@@ -499,7 +502,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     });
 
     return new ImageResponse(
-      buildPinMarkup({ pin, product, theme, imageDataUrl: null }),
+      buildPinMarkup({ pin, product, theme, imageSrc: null }),
       {
         width: PIN_WIDTH,
         height: PIN_HEIGHT,
