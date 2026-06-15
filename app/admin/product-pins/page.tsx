@@ -254,6 +254,7 @@ export default async function ProductPinsPage({ searchParams }: { searchParams?:
                   <div className="pin-grid">
                     {pins.map((pin: any, index: number) => {
                       const imagePath = `/api/pinterest/product-pin-image-png/${product.id}/${index}`;
+                      const previewImagePath = `/api/product-pin-preview/${product.id}/${index}`;
                       const sourceImagePath = `/api/pinterest/product-source-image/${product.id}`;
                       const trackedPath = pin.tracked_url || `/go/product-pin/${product.id}/${index}`;
                       const pinterestImageUrl = new URL(imagePath, canonicalSiteUrl).toString();
@@ -268,7 +269,7 @@ export default async function ProductPinsPage({ searchParams }: { searchParams?:
                         <div key={`${product.id}-${index}-${pin.title}`} className={`pin-card admin-pin-card ${posted ? 'posted' : ''}`}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             <ProductPinPreviewImage
-                              src={imagePath}
+                              src={previewImagePath}
                               title={pin.title || `Pin ${index + 1}`}
                               niche={pin.niche}
                               description={pin.description}
