@@ -70,7 +70,7 @@ const BROWSER_IMPORT_SNIPPET = `(() => {
     if (rect.width <= 80 || rect.height <= 80) return null;
     return rect;
   };
-  const tileFor = (el) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
+  const tileFor = (el) => el?.closest('[data-testid*=\"product\"], [data-testid*=\"tile\"], [data-testid*=\"card\"], article, li, section, div') || el?.parentElement || el;
   const uniqueBy = (items, keyFn) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
   const artistFromProductUrl = (productUrl) => {
     try {
@@ -887,7 +887,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
             const warnings = productWarnings(product);
             const safeTitle = sanitizeImportedProductTitle(product.title || '', product.target_url || '');
             return (
-              <form key={product.id} action={updateProductAction} className="product-editor">
+              <form key={product.id} id={`product-${product.id}`} action={updateProductAction} className="product-editor">
                 <input type="hidden" name="id" value={product.id} />
                 <div className="field-row">
                   <label className="field"><span>Title</span><input name="title" defaultValue={safeTitle} /></label>
@@ -897,6 +897,7 @@ export default async function ProductsPage({ searchParams }: { searchParams?: Pr
                   {validation.label}
                 </div>
                 <p className="admin-muted">{validation.reason}</p>
+                <p className="admin-muted">Product ID: {product.id}</p>
                 {warnings.map((warning) => <p key={warning} className="admin-muted">Warning: {warning}</p>)}
                 <label className="field"><span>Target URL</span><input name="target_url" defaultValue={product.target_url || ''} /></label>
                 <div className="field-row">
