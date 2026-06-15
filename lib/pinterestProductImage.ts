@@ -94,7 +94,19 @@ function absolutizeUrl(value: string, baseUrl: string) {
   }
 }
 
+function headHtml(html: string) {
+  const match = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  return match?.[1] || html;
+}
+
+function extractProductCdnImageUrl(html: string, pageUrl: string) {
+  const match = headHtml(html).match(/https:\/\/ih\d+\.redbubble\.net\/[^"'\s<>]+\/image\.[^"'\s<>]+\.(?:png|jpe?g|webp)(?:\?[^"'\s<>]*)?/i);
+  if (!match?.[0]) return '';
+  return absolutizeUrl(match[0].replaceAll('&amp;', '&'), pageUrl);
+}
+
 function extractMetaImageUrl(html: string, pageUrl: string) {
+  const scopedHtml = headHtml(html);
   const patterns = [
     /<meta[^>]+property=[\"']og:image:secure_url[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i,
     /<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i,
@@ -104,11 +116,14 @@ function extractMetaImageUrl(html: string, pageUrl: string) {
   ];
 
   for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
+    const match = scopedHtml.match(pattern);
+    if (match?.[1]) {
+      const candidate = absolutizeUrl(match[1].replaceAll('&amp;', '&'), pageUrl);
+      if (candidate && !isRedbubbleUiAsset(candidate)) return candidate;
+    }
   }
 
-  return '';
+  return extractProductCdnImageUrl(scopedHtml, pageUrl);
 }
 
 async function fetchRedbubblePageImageUrl(pageUrl: string) {
@@ -308,9 +323,8 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     candidates.push(targetUrl);
   }
 
-  let scrapedTargetImageUrl = '';
   if (isAbsoluteUrl(targetUrl) && !isDirectImageUrl(targetUrl)) {
-    scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
+    const scrapedTargetImageUrl = await fetchRedbubblePageImageUrl(targetUrl);
     if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
   }
 
