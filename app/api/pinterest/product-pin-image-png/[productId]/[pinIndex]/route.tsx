@@ -338,6 +338,8 @@ function HeroImage({ imageSrc, title, niche, productType, theme }: { imageSrc: s
             <img
               src={imageSrc}
               alt=""
+              width="680"
+              height="680"
               style={{
                 width: 680,
                 height: 680,

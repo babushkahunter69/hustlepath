@@ -319,6 +319,12 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
   const targetIsSpecificRedbubbleProduct = isSpecificRedbubbleProductPageUrl(targetUrl);
   const candidates: string[] = [];
 
+  // Prefer the saved Redbubble CDN image when we already have a direct product image.
+  // Product-page scraping is useful as a fallback, but it can drift to unrelated page art.
+  if (isAbsoluteUrl(explicitImageUrl) && isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
+    candidates.push(explicitImageUrl);
+  }
+
   if (isAbsoluteUrl(targetUrl) && isDirectImageUrl(targetUrl)) {
     candidates.push(targetUrl);
   }
@@ -328,9 +334,7 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
   }
 
-  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
-
-  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
+  if (!targetIsSpecificRedbubbleProduct && isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
     const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
     if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
   }
