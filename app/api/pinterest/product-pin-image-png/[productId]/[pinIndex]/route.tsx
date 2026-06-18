@@ -476,9 +476,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prod
   const pin = getPin(product.pinterest_meta, index);
   const theme = themeFor(index);
   const productImage = await resolvePinterestProductImage(product);
-  const sourceImageUrl = productImage.hasImage
-    ? new URL(`/api/pinterest/product-source-image/${productId}`, request.url).toString()
-    : null;
+  const sourceImageUrl = productImage.dataUrl;
 
   console.info('Pinterest product pin image source', pinterestProductImageDebugSummary(productImage));
 
@@ -490,7 +488,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prod
         height: PIN_HEIGHT,
         headers: {
           ...pinterestProductImageHeaders(productImage),
-          'X-Product-Image-Render-Mode': sourceImageUrl ? 'local-source-route' : 'fallback-mockup',
+          'X-Product-Image-Render-Mode': sourceImageUrl ? 'inline-image-data' : 'fallback-mockup',
         },
       }
     );

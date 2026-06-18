@@ -328,13 +328,11 @@ export async function resolvePinterestProductImage(product: any): Promise<Pinter
     if (scrapedTargetImageUrl && !isRedbubbleUiAsset(scrapedTargetImageUrl)) candidates.push(scrapedTargetImageUrl);
   }
 
-  if (!targetIsSpecificRedbubbleProduct) {
-    if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
+  if (isAbsoluteUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) candidates.push(explicitImageUrl);
 
-    if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
-      const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
-      if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
-    }
+  if (isAbsoluteUrl(explicitImageUrl) && !isDirectImageUrl(explicitImageUrl) && !isRedbubbleUiAsset(explicitImageUrl)) {
+    const scrapedExplicitImageUrl = await fetchRedbubblePageImageUrl(explicitImageUrl);
+    if (scrapedExplicitImageUrl && !isRedbubbleUiAsset(scrapedExplicitImageUrl)) candidates.push(scrapedExplicitImageUrl);
   }
 
   const seen = new Set<string>();
