@@ -9,7 +9,8 @@
     "lint": "next lint",
     "new-post": "node scripts/new-post.js",
     "create-admin": "node scripts/create-admin.js",
-    "scrape:redbubble": "tsx scripts/scrape-redbubble-products.ts"
+    "scrape:redbubble": "tsx scripts/scrape-redbubble-products.ts",
+    "sync:design-library": "tsx scripts/scrape-redbubble-products.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

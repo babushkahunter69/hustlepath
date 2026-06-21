@@ -253,7 +253,7 @@ async function csvDesignImportAction(formData: FormData) {
     const title = cleanText(row.title || row.name);
     const imageUrl = cleanText(row.image_url || row.image);
     const productUrl = cleanText(row.product_url || row.url);
-    const redbubbleUrl = cleanText(row.redbubble_url);
+    const redbubbleUrl = cleanText(row.redbubble_url || row.product_url || row.url);
     const result = await insertDesignRecord({
       title,
       imageUrl,
@@ -501,11 +501,22 @@ export default async function DesignLibraryPage({
           <button type="submit" className="primary-link">Save design</button>
         </form>
 
+        <section className="product-form admin-section">
+          <h2>Local Redbubble sync</h2>
+          <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps scraping local while the visual library stays online.</p>
+          <ol className="admin-muted">
+            <li>Open Terminal in the repo folder.</li>
+            <li>Run <code>npm run scrape:redbubble</code>.</li>
+            <li>Wait for <code>design-library-import.csv</code> to appear in the project root.</li>
+            <li>Upload that file in the CSV import form below.</li>
+          </ol>
+        </section>
+
         <form action={csvDesignImportAction} encType="multipart/form-data" className="product-form admin-section">
           <h2>CSV bulk import</h2>
-          <p className="admin-muted">Upload or paste CSV with <code>title</code>, <code>image_url</code>, <code>redbubble_url</code>, <code>niche</code>, and <code>tags</code>. Optional columns: <code>product_url</code>, <code>product_type</code>, <code>mood</code>, <code>notes</code>, <code>ai_keywords</code>, and <code>ai_caption_seed</code>.</p>
+          <p className="admin-muted">Upload or paste CSV with <code>title</code>, <code>image_url</code>, <code>redbubble_url</code>, <code>niche</code>, and <code>tags</code>. Optional columns: <code>product_url</code>, <code>product_type</code>, <code>mood</code>, <code>notes</code>, <code>ai_keywords</code>, and <code>ai_caption_seed</code>. The local Redbubble sync generates this format automatically.</p>
           <label className="field"><span>Upload CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
-          <label className="field"><span>Or paste CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,image_url,redbubble_url,niche,tags\nAll You Need Is Pancakes,https://example.com/pancakes.jpg,https://www.redbubble.com/i/sticker/...,relatable stickers,"cute breakfast, sticker"'} /></label>
+          <label className="field"><span>Or paste CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood\nAll You Need Is Pancakes,https://example.com/pancakes.jpg,https://www.redbubble.com/i/sticker/...,https://www.redbubble.com/i/sticker/...,relatable stickers,"cute breakfast, sticker",Sticker,Soft relatable'} /></label>
           <button type="submit" className="primary-link">Import CSV designs</button>
         </form>
 

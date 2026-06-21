@@ -11,6 +11,20 @@ type ProductRow = {
   source_shop: string;
 };
 
+type DesignLibraryRow = {
+  title: string;
+  image_url: string;
+  redbubble_url: string;
+  product_url: string;
+  niche: string;
+  tags: string;
+  product_type: string;
+  mood: string;
+  notes: string;
+  ai_keywords: string;
+  ai_caption_seed: string;
+};
+
 type ScrapeDiagnostics = {
   page: number;
   productLinkCount: number;
@@ -30,6 +44,8 @@ const SHOP_URL = 'https://www.redbubble.com/people/inkwanderstudio/shop';
 const SOURCE_SHOP = 'InkWanderStudio';
 const OUTPUT_JSON = 'redbubble-products.json';
 const OUTPUT_CSV = 'redbubble-products.csv';
+const DESIGN_LIBRARY_OUTPUT_JSON = 'design-library-import.json';
+const DESIGN_LIBRARY_OUTPUT_CSV = 'design-library-import.csv';
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 function cleanText(value: unknown) {
@@ -101,6 +117,56 @@ function hasBadImageUrl(url: string) {
     || value.includes('favorite')
     || value.includes('heart')
   );
+}
+
+function detectNiche(title: string, productType: string) {
+  const haystack = `${cleanText(title)} ${cleanText(productType)}`.toLowerCase();
+  if (/coffee|espresso|latte|cafe|caffeine/.test(haystack)) return 'coffee culture';
+  if (/introvert|homebody|social battery|quiet|stay home/.test(haystack)) return 'introvert humor';
+  if (/millennial|adulting|burnout|morally exhausted|financially flexible|nostalgia/.test(haystack)) return 'millennial humor';
+  if (/cat|dog|frog|goose|duck|bird|bear|raccoon|animal/.test(haystack)) return 'sarcastic animals';
+  return 'relatable stickers';
+}
+
+function detectMood(niche: string) {
+  if (niche === 'coffee culture') return 'Cafe cozy';
+  if (niche === 'introvert humor') return 'Quiet cozy';
+  if (niche === 'millennial humor') return 'Witty burnout';
+  if (niche === 'sarcastic animals') return 'Playful sarcasm';
+  return 'Soft relatable';
+}
+
+function designTags(title: string, niche: string, productType: string) {
+  return Array.from(new Set([
+    niche,
+    cleanText(productType).toLowerCase(),
+    'InkWanderStudio',
+    ...cleanText(title)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .filter((part) => part.length >= 4)
+      .slice(0, 4),
+  ].filter(Boolean)));
+}
+
+function toDesignLibraryRow(row: ProductRow): DesignLibraryRow {
+  const niche = detectNiche(row.title, row.product_type);
+  const mood = detectMood(niche);
+  const tags = designTags(row.title, niche, row.product_type);
+
+  return {
+    title: row.title,
+    image_url: row.image_url,
+    redbubble_url: row.product_url,
+    product_url: row.product_url,
+    niche,
+    tags: tags.join(', '),
+    product_type: row.product_type,
+    mood,
+    notes: `Imported from the ${SOURCE_SHOP} Redbubble shop via the local Playwright sync.`,
+    ai_keywords: tags.join(', '),
+    ai_caption_seed: `${row.title} by ${SOURCE_SHOP}`,
+  };
 }
 
 async function waitForProductGrid(page: Page) {
@@ -423,6 +489,7 @@ async function main() {
   }
 
   const rows = Array.from(rowsByUrl.values());
+  const designLibraryRows = rows.map(toDesignLibraryRow);
   const csv = [
     'title,product_url,image_url,product_type,source_shop',
     ...rows.map((row) => [
@@ -433,12 +500,30 @@ async function main() {
       csvEscape(row.source_shop),
     ].join(',')),
   ].join('\n');
+  const designLibraryCsv = [
+    'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed',
+    ...designLibraryRows.map((row) => [
+      csvEscape(row.title),
+      csvEscape(row.image_url),
+      csvEscape(row.redbubble_url),
+      csvEscape(row.product_url),
+      csvEscape(row.niche),
+      csvEscape(row.tags),
+      csvEscape(row.product_type),
+      csvEscape(row.mood),
+      csvEscape(row.notes),
+      csvEscape(row.ai_keywords),
+      csvEscape(row.ai_caption_seed),
+    ].join(',')),
+  ].join('\n');
 
   const cwd = process.cwd();
   const outputDir = path.resolve(cwd);
   await mkdir(outputDir, { recursive: true });
   await writeFile(path.join(outputDir, OUTPUT_JSON), `${JSON.stringify(rows, null, 2)}\n`, 'utf8');
   await writeFile(path.join(outputDir, OUTPUT_CSV), `${csv}\n`, 'utf8');
+  await writeFile(path.join(outputDir, DESIGN_LIBRARY_OUTPUT_JSON), `${JSON.stringify(designLibraryRows, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(outputDir, DESIGN_LIBRARY_OUTPUT_CSV), `${designLibraryCsv}\n`, 'utf8');
 
   console.log(`Scraped ${rows.length} unique Redbubble products.`);
   console.table(diagnostics.map((item) => ({
@@ -448,7 +533,7 @@ async function main() {
     acceptedImages: item.acceptedImageCount,
     rows: item.rowCount,
   })));
-  console.log(`Wrote ${OUTPUT_JSON} and ${OUTPUT_CSV} in ${outputDir}`);
+  console.log(`Wrote ${OUTPUT_JSON}, ${OUTPUT_CSV}, ${DESIGN_LIBRARY_OUTPUT_JSON}, and ${DESIGN_LIBRARY_OUTPUT_CSV} in ${outputDir}`);
 }
 
 main().catch((error) => {
