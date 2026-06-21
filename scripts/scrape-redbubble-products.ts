@@ -23,21 +23,26 @@ type DesignLibraryRow = {
   notes: string;
   ai_keywords: string;
   ai_caption_seed: string;
+  source: string;
 };
 
 type ScrapeDiagnostics = {
   page: number;
-  productLinkCount: number;
-  visibleLargeImageCount: number;
-  acceptedImageCount: number;
-  rowCount: number;
+  discoveredUrlCount: number;
   firstProductUrls: string[];
-  firstImageUrls: string[];
 };
 
 type PageScrapeResult = {
-  rows: ProductRow[];
+  productUrls: string[];
   diagnostics: ScrapeDiagnostics;
+};
+
+type ProductPageResult = {
+  title: string;
+  image_url: string;
+  product_url: string;
+  product_type: string;
+  source_shop: string;
 };
 
 const SHOP_URL = 'https://www.redbubble.com/people/inkwanderstudio/shop';
@@ -166,13 +171,14 @@ function toDesignLibraryRow(row: ProductRow): DesignLibraryRow {
     notes: `Imported from the ${SOURCE_SHOP} Redbubble shop via the local Playwright sync.`,
     ai_keywords: tags.join(', '),
     ai_caption_seed: `${row.title} by ${SOURCE_SHOP}`,
+    source: 'redbubble-sync',
   };
 }
 
 async function waitForProductGrid(page: Page) {
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(1500);
-  await page.waitForFunction(() => document.querySelectorAll('a[href*="/i/"]').length > 12, undefined, { timeout: 30000 });
+  await page.waitForFunction(() => document.querySelectorAll('a[href*="/i/"]').length > 3, undefined, { timeout: 30000 });
 }
 
 async function autoScroll(page: Page) {
@@ -192,7 +198,6 @@ async function autoScroll(page: Page) {
 
 async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageScrapeResult> {
   const browserScript = String.raw`(() => {
-    const sourceShop = ${JSON.stringify(SOURCE_SHOP)};
     const currentPage = ${JSON.stringify(pageNumber)};
 
     const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -204,78 +209,11 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
       return text;
     };
     const uniqueBy = (items, keyFn) => Array.from(new Map(items.map((item) => [keyFn(item), item])).values());
-    const srcsetUrls = (srcset) => clean(srcset)
-      .split(',')
-      .map((part) => normalizeUrl(clean(part).split(/\s+/)[0]))
-      .filter(Boolean);
-    const backgroundUrls = (value) => {
-      const text = clean(value);
-      const urls = [];
-      if (!text) return urls;
-      let cursor = 0;
-      while (cursor < text.length) {
-        const start = text.indexOf('url(', cursor);
-        if (start === -1) break;
-        const end = text.indexOf(')', start + 4);
-        if (end === -1) break;
-        let candidate = text.slice(start + 4, end).trim();
-        if ((candidate.startsWith('"') && candidate.endsWith('"')) || (candidate.startsWith("'") && candidate.endsWith("'"))) {
-          candidate = candidate.slice(1, -1);
-        }
-        const normalized = normalizeUrl(candidate);
-        if (normalized) urls.push(normalized);
-        cursor = end + 1;
-      }
-      return urls;
-    };
     const visibleRect = (el) => {
       if (!el || !(el instanceof HTMLElement)) return null;
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0) return null;
       return rect;
-    };
-    const largeVisibleRect = (el) => {
-      const rect = visibleRect(el);
-      if (!rect) return null;
-      if (rect.width <= 80 || rect.height <= 80) return null;
-      return rect;
-    };
-    const isBadTitle = (value) => {
-      const title = clean(value).toLowerCase();
-      return !title || title === 'favorite' || title === 'add to favorites' || title === 'add to cart' || title === 'cart' || title === 'redbubble' || title === 'inkwanderstudio' || title.startsWith('tags:') || title.startsWith('from $') || title.startsWith('$');
-    };
-    const looksLikePrice = (value) => {
-      const text = clean(value);
-      if (!text) return false;
-      if (text.toLowerCase().startsWith('from $') || text.startsWith('$')) return true;
-      let digits = 0;
-      for (const char of text.replace('$', '').replaceAll(',', '')) {
-        if (char >= '0' && char <= '9') {
-          digits += 1;
-          continue;
-        }
-        if (char !== '.') return false;
-      }
-      return digits > 0;
-    };
-    const isBadImageUrl = (value) => {
-      const url = clean(value).toLowerCase();
-      return !url || url.includes('/boom/client/') || url.includes('.svg') || url.includes('/avatar') || url.includes('avatar.') || url.includes('logo') || url.includes('icon') || url.includes('favorite') || url.includes('heart');
-    };
-    const tileFor = (el) => el?.closest('[data-testid*="product"], [data-testid*="tile"], [data-testid*="card"], article, li, section, div') || el?.parentElement || el;
-    const imageCandidatesFor = (el) => {
-      if (!el || !(el instanceof HTMLElement)) return [];
-      const urls = [
-        normalizeUrl(el.currentSrc),
-        normalizeUrl(el.getAttribute('src')),
-        normalizeUrl(el.getAttribute('data-src')),
-        ...srcsetUrls(el.getAttribute('srcset')),
-        ...srcsetUrls(el.getAttribute('data-srcset')),
-        ...backgroundUrls(el.style.backgroundImage),
-      ];
-      const parent = el.parentElement;
-      if (parent) urls.push(...backgroundUrls(parent.style.backgroundImage));
-      return uniqueBy(urls.filter(Boolean), (url) => url);
     };
     const links = uniqueBy(
       Array.from(document.querySelectorAll('a[href]'))
@@ -285,94 +223,64 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
           const rect = visibleRect(anchor);
           if (!rect) return null;
           return {
-            element: anchor,
             productUrl: href,
             rect,
-            tile: tileFor(anchor),
-            text: clean(anchor.textContent),
           };
         })
         .filter(Boolean),
       (item) => item.productUrl
     );
-    const largeImages = Array.from(document.querySelectorAll('img'))
-      .map((img) => {
-        const rect = largeVisibleRect(img);
-        if (!rect) return null;
-        const urls = imageCandidatesFor(img);
-        const acceptedUrl = urls.find((url) => !isBadImageUrl(url) && (url.startsWith('http://') || url.startsWith('https://'))) || '';
-        return {
-          element: img,
-          rect,
-          urls,
-          acceptedUrl,
-          tile: tileFor(img),
-          alt: clean(img.getAttribute('alt')),
-        };
-      })
-      .filter(Boolean);
-    const backgroundBlocks = Array.from(document.querySelectorAll('article, li, section, div'))
-      .map((el) => {
-        const rect = largeVisibleRect(el);
-        if (!rect) return null;
-        const urls = uniqueBy([
-          ...backgroundUrls(el.style.backgroundImage),
-          ...backgroundUrls(el.parentElement?.style?.backgroundImage),
-        ].filter(Boolean), (url) => url);
-        const acceptedUrl = urls.find((url) => !isBadImageUrl(url) && (url.startsWith('http://') || url.startsWith('https://'))) || '';
-        if (!acceptedUrl) return null;
-        return {
-          element: el,
-          rect,
-          urls,
-          acceptedUrl,
-          tile: tileFor(el),
-          alt: '',
-        };
-      })
-      .filter(Boolean);
-    const visibleLargeImageCandidates = largeImages.map((item) => ({ url: item.acceptedUrl || item.urls[0] || '', width: item.rect.width, height: item.rect.height }));
-    const productImages = uniqueBy(
-      [...largeImages, ...backgroundBlocks]
-        .filter((item) => item && item.acceptedUrl)
-        .map((item) => ({
-          imageUrl: item.acceptedUrl,
-          rect: item.rect,
-          tile: item.tile,
-          alt: item.alt,
-        })),
-      (item) => item.imageUrl + '|' + Math.round(item.rect.top) + '|' + Math.round(item.rect.left)
-    );
-    const nearestLinkForImage = (image) => {
-      const tileLinks = links.filter((link) => link.tile === image.tile || (image.tile && image.tile.contains(link.element)));
-      const pool = tileLinks.length ? tileLinks : links;
-      const ranked = pool
-        .map((link) => {
-          const verticalPenalty = link.rect.top >= image.rect.top - 24 ? 0 : 1200;
-          const distance = Math.abs(link.rect.top - image.rect.bottom) + Math.abs(link.rect.left - image.rect.left);
-          return { link, score: distance + verticalPenalty };
-        })
-        .sort((a, b) => a.score - b.score);
-      return ranked[0]?.link || null;
+    const uniqueUrls = links
+      .map((item) => item.productUrl)
+      .filter((url) => url.includes('-by-InkWanderStudio/') || url.includes('-by-inkwanderstudio/'));
+    return {
+      productUrls: uniqueUrls,
+      diagnostics: {
+        page: currentPage,
+        discoveredUrlCount: uniqueUrls.length,
+        firstProductUrls: uniqueUrls.slice(0, 10),
+      },
     };
-    const productTypeFromUrlLocal = (productUrl) => {
-      try {
-        const parts = new URL(productUrl).pathname.split('/').filter(Boolean);
-        const index = parts.indexOf('i');
-        const raw = index >= 0 ? parts[index + 1] || '' : '';
-        if (!raw) return '';
-        return raw
-          .split('-')
-          .filter(Boolean)
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(' ');
-      } catch {
-        return '';
-      }
+  })()`;
+
+  return page.evaluate<PageScrapeResult>(browserScript);
+}
+
+function validProductImageUrl(url: string) {
+  const value = cleanText(url).toLowerCase();
+  if (hasBadImageUrl(value)) return false;
+  return /https?:\/\/ih[0-9]\.redbubble\.net\/image\.[^"'?\s]+\.(png|jpe?g|webp)(\?|$)/i.test(value);
+}
+
+async function scrapeProductPage(page: Page, productUrl: string): Promise<ProductPageResult | null> {
+  await page.goto(productUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+
+  const browserScript = String.raw`((targetUrl) => {
+    const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const normalizeUrl = (value) => {
+      const text = clean(value);
+      if (!text) return '';
+      if (text.startsWith('//')) return 'https:' + text;
+      if (text.startsWith('/')) return new URL(text, location.origin).toString();
+      return text;
     };
-    const titleFromUrlLocal = (productUrl) => {
+    const metaContent = (selector) => {
+      const node = document.querySelector(selector);
+      return clean(node?.getAttribute('content'));
+    };
+    const badImage = (value) => {
+      const url = clean(value).toLowerCase();
+      return !url || url.includes('/boom/client/') || url.includes('.svg') || url.includes('/avatar') || url.includes('avatar.') || url.includes('logo') || url.includes('icon') || url.includes('favorite') || url.includes('heart');
+    };
+    const directImage = (value) => {
+      const url = clean(value);
+      if (badImage(url)) return false;
+      return /https?:\/\/ih[0-9]\.redbubble\.net\/image\.[^"'?\s]+\.(png|jpe?g|webp)(\?|$)/i.test(url);
+    };
+    const titleFromUrl = (value) => {
       try {
-        const parts = new URL(productUrl).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+        const parts = new URL(value).pathname.split('/').filter(Boolean).map(decodeURIComponent);
         const index = parts.indexOf('i');
         const slug = parts[index + 2] || parts.find((part) => part.includes('-by-')) || '';
         return clean(slug.replace(/-by-.+$/i, '').replace(/-/g, ' ')).replace(/\b\w/g, (char) => char.toUpperCase());
@@ -380,43 +288,66 @@ async function scrapeCurrentPage(page: Page, pageNumber: number): Promise<PageSc
         return '';
       }
     };
-    const titleFromLink = (link, imageAlt) => {
-      const directText = clean(link?.text);
-      if (directText && !isBadTitle(directText) && !looksLikePrice(directText)) return directText;
-      if (imageAlt && !isBadTitle(imageAlt) && !looksLikePrice(imageAlt)) return imageAlt;
-      return link ? clean(titleFromUrlLocal(link.productUrl)) : '';
+    const productTypeFromUrl = (value) => {
+      try {
+        const parts = new URL(value).pathname.split('/').filter(Boolean);
+        const index = parts.indexOf('i');
+        const raw = index >= 0 ? parts[index + 1] || '' : '';
+        if (!raw) return '';
+        return raw.split('-').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+      } catch {
+        return '';
+      }
     };
-    const rows = productImages
-      .map((image) => {
-        const link = nearestLinkForImage(image);
-        if (!link) return null;
-        const title = titleFromLink(link, image.alt);
-        if (!title || isBadTitle(title) || looksLikePrice(title)) return null;
-        return {
-          title,
-          product_url: link.productUrl,
-          image_url: image.imageUrl,
-          product_type: clean(productTypeFromUrlLocal(link.productUrl)),
-          source_shop: sourceShop,
-        };
-      })
-      .filter(Boolean);
-    const uniqueRows = uniqueBy(rows, (row) => row.product_url);
-    return {
-      rows: uniqueRows,
-      diagnostics: {
-        page: currentPage,
-        productLinkCount: links.length,
-        visibleLargeImageCount: visibleLargeImageCandidates.length,
-        acceptedImageCount: productImages.length,
-        rowCount: uniqueRows.length,
-        firstProductUrls: links.slice(0, 10).map((item) => item.productUrl),
-        firstImageUrls: productImages.slice(0, 20).map((item) => item.imageUrl),
-      },
-    };
-  })()`;
 
-  return page.evaluate<PageScrapeResult>(browserScript);
+    const title = clean(
+      metaContent('meta[property="og:title"]') ||
+      metaContent('meta[name="twitter:title"]') ||
+      document.querySelector('h1')?.textContent ||
+      document.title
+    )
+      .replace(/\s*\|\s*Redbubble\s*$/i, '')
+      .replace(/\s*by\s+InkWanderStudio\s*$/i, '')
+      .trim();
+
+    const imageCandidates = [
+      normalizeUrl(metaContent('meta[property="og:image:secure_url"]')),
+      normalizeUrl(metaContent('meta[property="og:image"]')),
+      normalizeUrl(metaContent('meta[name="twitter:image"]')),
+      ...Array.from(document.querySelectorAll('img[src], img[srcset]')).flatMap((img) => {
+        const urls = [
+          normalizeUrl(img.getAttribute('src')),
+          normalizeUrl(img.getAttribute('data-src')),
+          normalizeUrl(img.getAttribute('srcset')?.split(',')[0]?.trim()?.split(/\s+/)[0]),
+          normalizeUrl(img.getAttribute('data-srcset')?.split(',')[0]?.trim()?.split(/\s+/)[0]),
+          normalizeUrl(img.currentSrc),
+        ];
+        return urls.filter(Boolean);
+      }),
+    ].filter(Boolean);
+
+    const imageUrl = imageCandidates.find((candidate) => directImage(candidate)) || '';
+
+    return {
+      title: title || titleFromUrl(targetUrl),
+      image_url: imageUrl,
+      product_url: targetUrl,
+      product_type: productTypeFromUrl(targetUrl),
+      source_shop: ${JSON.stringify(SOURCE_SHOP)},
+    };
+  })(${JSON.stringify(productUrl)})`;
+
+  const row = await page.evaluate<ProductPageResult>(browserScript);
+  const safeTitle = sanitizeImportedProductTitle(row.title, row.product_url);
+
+  if (!row.product_url || !row.image_url || !isInkWanderStudioProductUrl(row.product_url)) return null;
+  if (hasBadTitle(safeTitle) || !validProductImageUrl(row.image_url)) return null;
+
+  return {
+    ...row,
+    title: safeTitle || titleFromUrl(row.product_url),
+    product_type: row.product_type || productTypeFromUrl(row.product_url),
+  };
 }
 
 async function gotoNextPage(page: Page) {
@@ -453,36 +384,45 @@ async function gotoNextPage(page: Page) {
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
+  const shopPage = await browser.newPage({
+    viewport: MOBILE_VIEWPORT,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  const productPage = await browser.newPage({
     viewport: MOBILE_VIEWPORT,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
   });
 
   const rowsByUrl = new Map<string, ProductRow>();
+  const discoveredUrls = new Set<string>();
   const diagnostics: ScrapeDiagnostics[] = [];
 
   try {
-    await page.goto(SHOP_URL, { waitUntil: 'domcontentloaded' });
+    await shopPage.goto(SHOP_URL, { waitUntil: 'domcontentloaded' });
 
     for (let pageNumber = 1; pageNumber <= 20; pageNumber += 1) {
-      await waitForProductGrid(page);
-      await autoScroll(page);
-      const result = await scrapeCurrentPage(page, pageNumber);
+      await waitForProductGrid(shopPage);
+      await autoScroll(shopPage);
+      const result = await scrapeCurrentPage(shopPage, pageNumber);
       diagnostics.push(result.diagnostics);
 
-      for (const row of result.rows) {
-        const safeTitle = sanitizeImportedProductTitle(row.title, row.product_url);
-        if (!row.product_url || !row.image_url || !isInkWanderStudioProductUrl(row.product_url) || hasBadTitle(safeTitle) || hasBadImageUrl(row.image_url)) continue;
-        if (!rowsByUrl.has(row.product_url)) {
-          rowsByUrl.set(row.product_url, {
-            ...row,
-            title: safeTitle || titleFromUrl(row.product_url),
-          });
-        }
+      for (const productUrl of result.productUrls) {
+        if (isInkWanderStudioProductUrl(productUrl)) discoveredUrls.add(productUrl);
       }
 
-      const moved = await gotoNextPage(page);
+      const moved = await gotoNextPage(shopPage);
       if (!moved) break;
+    }
+
+    let processed = 0;
+    for (const productUrl of discoveredUrls) {
+      const row = await scrapeProductPage(productPage, productUrl);
+      processed += 1;
+      if (!row) continue;
+      if (!rowsByUrl.has(row.product_url)) rowsByUrl.set(row.product_url, row);
+      if (processed % 10 === 0) {
+        console.log(`Processed ${processed}/${discoveredUrls.size} product pages...`);
+      }
     }
   } finally {
     await browser.close();
@@ -501,7 +441,7 @@ async function main() {
     ].join(',')),
   ].join('\n');
   const designLibraryCsv = [
-    'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed',
+    'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed,source',
     ...designLibraryRows.map((row) => [
       csvEscape(row.title),
       csvEscape(row.image_url),
@@ -514,6 +454,7 @@ async function main() {
       csvEscape(row.notes),
       csvEscape(row.ai_keywords),
       csvEscape(row.ai_caption_seed),
+      csvEscape(row.source),
     ].join(',')),
   ].join('\n');
 
@@ -528,11 +469,9 @@ async function main() {
   console.log(`Scraped ${rows.length} unique Redbubble products.`);
   console.table(diagnostics.map((item) => ({
     page: item.page,
-    productLinks: item.productLinkCount,
-    largeImages: item.visibleLargeImageCount,
-    acceptedImages: item.acceptedImageCount,
-    rows: item.rowCount,
+    discoveredUrls: item.discoveredUrlCount,
   })));
+  console.log(`Discovered ${discoveredUrls.size} product URLs and kept ${rows.length} exact product-page matches.`);
   console.log(`Wrote ${OUTPUT_JSON}, ${OUTPUT_CSV}, ${DESIGN_LIBRARY_OUTPUT_JSON}, and ${DESIGN_LIBRARY_OUTPUT_CSV} in ${outputDir}`);
 }
 

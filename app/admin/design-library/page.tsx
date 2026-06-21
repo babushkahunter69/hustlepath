@@ -266,7 +266,7 @@ async function csvDesignImportAction(formData: FormData) {
       notes: cleanText(row.notes),
       aiKeywords: parseList(row.ai_keywords),
       aiCaptionSeed: cleanText(row.ai_caption_seed),
-      source: 'csv',
+      source: cleanText(row.source || 'csv'),
     });
 
     if (result.inserted) inserted += 1;
@@ -278,6 +278,39 @@ async function csvDesignImportAction(formData: FormData) {
 
   const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
   flashRedirect(`Design CSV import added ${inserted} library records and skipped ${skipped}.${suffix}`);
+}
+
+async function deleteBadSyncedDesignImportsAction() {
+  'use server';
+
+  await ensureDesignLibraryTable();
+
+  const rowsToDelete = await sql`
+    select id
+    from design_library
+    where
+      coalesce(source, '') = 'redbubble-sync'
+      or (
+        coalesce(source, '') = 'csv'
+        and coalesce(notes, '') ilike 'Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.%'
+      )
+  `;
+
+  if (!rowsToDelete.length) {
+    flashRedirect('No bad synced design imports were found.');
+  }
+
+  await sql`
+    delete from design_library
+    where
+      coalesce(source, '') = 'redbubble-sync'
+      or (
+        coalesce(source, '') = 'csv'
+        and coalesce(notes, '') ilike 'Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.%'
+      )
+  `;
+
+  flashRedirect(`Deleted ${rowsToDelete.length} bad synced design imports.`);
 }
 
 async function designPinsAction(formData: FormData) {
@@ -503,7 +536,7 @@ export default async function DesignLibraryPage({
 
         <section className="product-form admin-section">
           <h2>Local Redbubble sync</h2>
-          <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps scraping local while the visual library stays online.</p>
+          <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps scraping local while the visual library stays online. The sync now aims to open each product page directly instead of trusting shop-grid image pairings.</p>
           <ol className="admin-muted">
             <li>Open Terminal in the repo folder.</li>
             <li>Run <code>npm run scrape:redbubble</code>.</li>
@@ -511,6 +544,12 @@ export default async function DesignLibraryPage({
             <li>Upload that file in the CSV import form below.</li>
           </ol>
         </section>
+
+        <form action={deleteBadSyncedDesignImportsAction} className="product-form admin-section">
+          <h2>Clean bad sync imports</h2>
+          <p className="admin-muted">Remove the broken Design Library rows created by the earlier Redbubble sync attempt so you can re-import from a clean slate.</p>
+          <button type="submit" className="primary-link">Delete bad synced imports</button>
+        </form>
 
         <form action={csvDesignImportAction} encType="multipart/form-data" className="product-form admin-section">
           <h2>CSV bulk import</h2>
