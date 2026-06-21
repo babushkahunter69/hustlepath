@@ -123,6 +123,10 @@ export default async function Admin() {
             Product pins
           </Link>
 
+          <Link href="/admin/design-library" className="secondary-link">
+            Design library
+          </Link>
+
           <Link href="/blog" className="secondary-link">
             View public blog
           </Link>
