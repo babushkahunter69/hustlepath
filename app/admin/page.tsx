@@ -127,6 +127,10 @@ export default async function Admin() {
             Design library
           </Link>
 
+          <Link href="/admin/redbubble-products" className="secondary-link">
+            Redbubble products
+          </Link>
+
           <Link href="/blog" className="secondary-link">
             View public blog
           </Link>
