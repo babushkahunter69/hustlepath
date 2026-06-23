@@ -230,11 +230,7 @@ async function createDesignAction(formData: FormData) {
   flashRedirect(`Saved ${title || 'design'} to the visual design library.`);
 }
 
-async function csvDesignImportAction(formData: FormData) {
-  'use server';
-
-  await ensureDesignLibraryTable();
-
+async function readCsvImportInput(formData: FormData) {
   let csv = String(formData.get('csv_data') || '').trim();
   const csvFile = formData.get('csv_file');
 
@@ -242,6 +238,15 @@ async function csvDesignImportAction(formData: FormData) {
     csv = (await csvFile.text()).trim();
   }
 
+  return csv;
+}
+
+async function csvDesignImportAction(formData: FormData) {
+  'use server';
+
+  await ensureDesignLibraryTable();
+
+  const csv = await readCsvImportInput(formData);
   const rows = parseCsvRows(csv);
   if (!rows.length) flashRedirect('Upload a CSV file or paste CSV text with title, image_url, redbubble_url, niche, and tags.');
 
@@ -278,6 +283,82 @@ async function csvDesignImportAction(formData: FormData) {
 
   const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
   flashRedirect(`Design CSV import added ${inserted} library records and skipped ${skipped}.${suffix}`);
+}
+
+async function replaceSyncedDesignImportsAction(formData: FormData) {
+  'use server';
+
+  await ensureDesignLibraryTable();
+
+  const csv = await readCsvImportInput(formData);
+  const rows = parseCsvRows(csv);
+  if (!rows.length) flashRedirect('Upload a sync CSV file or paste sync CSV text first.');
+
+  const preparedRows = rows.map((row) => ({
+    title: cleanText(row.title || row.name),
+    imageUrl: cleanText(row.image_url || row.image),
+    productUrl: cleanText(row.product_url || row.url),
+    redbubbleUrl: cleanText(row.redbubble_url || row.product_url || row.url),
+    niche: cleanText(row.niche),
+    productType: cleanText(row.product_type),
+    mood: cleanText(row.mood),
+    tags: parseList(row.tags),
+    notes: cleanText(row.notes),
+    aiKeywords: parseList(row.ai_keywords),
+    aiCaptionSeed: cleanText(row.ai_caption_seed),
+    source: cleanText(row.source || 'redbubble-sync'),
+  }));
+
+  const invalidRows: string[] = [];
+  for (const row of preparedRows) {
+    if (!row.title) {
+      invalidRows.push(`${row.imageUrl || 'row'}: missing title`);
+      continue;
+    }
+    const imageValidation = validateDesignImageUrl(row.imageUrl);
+    if (imageValidation) invalidRows.push(`${row.title}: ${imageValidation}`);
+  }
+
+  if (invalidRows.length) {
+    flashRedirect(`Sync import stopped before replacing anything. First issues: ${invalidRows.slice(0, 3).join(' | ')}`);
+  }
+
+  const existingSynced = await sql`
+    select id
+    from design_library
+    where
+      coalesce(source, '') = 'redbubble-sync'
+      or (
+        coalesce(source, '') = 'csv'
+        and coalesce(notes, '') ilike 'Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.%'
+      )
+  `;
+
+  await sql`
+    delete from design_library
+    where
+      coalesce(source, '') = 'redbubble-sync'
+      or (
+        coalesce(source, '') = 'csv'
+        and coalesce(notes, '') ilike 'Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.%'
+      )
+  `;
+
+  let inserted = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const row of preparedRows) {
+    const result = await insertDesignRecord(row);
+    if (result.inserted) inserted += 1;
+    else {
+      skipped += 1;
+      errors.push(`${row.title || row.imageUrl || 'row'}: ${result.reason}`);
+    }
+  }
+
+  const suffix = errors.length ? ` First issues: ${errors.slice(0, 3).join(' | ')}` : '';
+  flashRedirect(`Replaced ${existingSynced.length} synced design records with ${inserted} fresh imports and skipped ${skipped}.${suffix}`);
 }
 
 async function deleteBadSyncedDesignImportsAction() {
@@ -541,9 +622,17 @@ export default async function DesignLibraryPage({
             <li>Open Terminal in the repo folder.</li>
             <li>Run <code>npm run scrape:redbubble</code>.</li>
             <li>Wait for <code>design-library-import.csv</code> to appear in the project root.</li>
-            <li>Upload that file in the CSV import form below.</li>
+            <li>Upload that file in the replace synced library form below.</li>
           </ol>
         </section>
+
+        <form action={replaceSyncedDesignImportsAction} encType="multipart/form-data" className="product-form admin-section">
+          <h2>Replace synced library</h2>
+          <p className="admin-muted">Use this after running the local Redbubble sync. It deletes only the previous synced Redbubble records, then imports the fresh sync CSV. Manual uploads and hand-entered designs stay untouched.</p>
+          <label className="field"><span>Upload sync CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
+          <label className="field"><span>Or paste sync CSV data</span><textarea name="csv_data" rows={6} placeholder={'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed,source\nFinancially Flexible Morally Exhausted,https://ih1.redbubble.net/image....jpg,https://www.redbubble.com/i/t-shirt/...,https://www.redbubble.com/i/t-shirt/...,millennial humor,"millennial humor, witty burnout",T Shirt,Witty Burnout,"Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.","millennial humor, witty burnout","Financially Flexible Morally Exhausted by InkWanderStudio",redbubble-sync'} /></label>
+          <button type="submit" className="primary-link">Replace synced library</button>
+        </form>
 
         <form action={deleteBadSyncedDesignImportsAction} className="product-form admin-section">
           <h2>Clean bad sync imports</h2>
