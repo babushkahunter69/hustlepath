@@ -19,6 +19,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <meta
+          name="p:domain_verify"
+          content="ab2593b6ce265fa067352302873917d5"
+        />
+      </head>
       <body>
         <header
   style={{
