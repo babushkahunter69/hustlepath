@@ -618,6 +618,7 @@ export default async function DesignLibraryPage({
         <section className="product-form admin-section">
           <h2>Local Redbubble sync</h2>
           <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps scraping local while the visual library stays online. The sync now aims to open each product page directly instead of trusting shop-grid image pairings.</p>
+          <div className="notice">This is the faster workflow: one sync CSV upload removes the previous synced Redbubble rows and imports the fresh ones in one step. Manual uploads and hand-entered designs stay untouched.</div>
           <ol className="admin-muted">
             <li>Open Terminal in the repo folder.</li>
             <li>Run <code>npm run scrape:redbubble</code>.</li>
@@ -627,16 +628,16 @@ export default async function DesignLibraryPage({
         </section>
 
         <form action={replaceSyncedDesignImportsAction} encType="multipart/form-data" className="product-form admin-section">
-          <h2>Replace synced library</h2>
-          <p className="admin-muted">Use this after running the local Redbubble sync. It deletes only the previous synced Redbubble records, then imports the fresh sync CSV. Manual uploads and hand-entered designs stay untouched.</p>
+          <h2>Reset + import synced CSV</h2>
+          <p className="admin-muted">Use this after running the local Redbubble sync. Upload one fresh <code>design-library-import.csv</code> file and the app will first reset the older synced Redbubble rows, then import the new synced rows automatically. Manual uploads and hand-entered designs stay untouched.</p>
           <label className="field"><span>Upload sync CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
           <label className="field"><span>Or paste sync CSV data</span><textarea name="csv_data" rows={6} placeholder={'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed,source\nFinancially Flexible Morally Exhausted,https://ih1.redbubble.net/image....jpg,https://www.redbubble.com/i/t-shirt/...,https://www.redbubble.com/i/t-shirt/...,millennial humor,"millennial humor, witty burnout",T Shirt,Witty Burnout,"Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.","millennial humor, witty burnout","Financially Flexible Morally Exhausted by InkWanderStudio",redbubble-sync'} /></label>
-          <button type="submit" className="primary-link">Replace synced library</button>
+          <button type="submit" className="primary-link">Reset + import synced CSV</button>
         </form>
 
         <form action={deleteBadSyncedDesignImportsAction} className="product-form admin-section">
-          <h2>Clean bad sync imports</h2>
-          <p className="admin-muted">Remove the broken Design Library rows created by the earlier Redbubble sync attempt so you can re-import from a clean slate.</p>
+          <h2>Emergency cleanup for old broken syncs</h2>
+          <p className="admin-muted">Use this only if an older sync imported obviously wrong images or titles. It clears the earlier synced Redbubble rows so you can run the reset-and-import flow again from a clean slate.</p>
           <button type="submit" className="primary-link">Delete bad synced imports</button>
         </form>
 
