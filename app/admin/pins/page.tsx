@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { attachPinUrls, generatePinterestPins, normalizePinterestMeta } from '@/lib/pinterest';
 import { parseKeywords } from '@/lib/monetization';
+import AdminNav from '../AdminNav';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -136,6 +137,8 @@ export default async function AdminPinsPage() {
           </div>
           <Link href="/admin" className="secondary-link small">Dashboard</Link>
         </div>
+
+        <AdminNav current="pinterest" />
 
         {error && <div className="notice">Database not ready: {error}</div>}
 

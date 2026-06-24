@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
+import AdminNav from '../AdminNav';
 import DesignPinPreviewImage from './DesignPinPreviewImage';
 import {
   attachDesignPinUrls,
@@ -248,7 +249,7 @@ async function csvDesignImportAction(formData: FormData) {
 
   const csv = await readCsvImportInput(formData);
   const rows = parseCsvRows(csv);
-  if (!rows.length) flashRedirect('Upload a CSV file or paste CSV text with title, image_url, redbubble_url, niche, and tags.');
+  if (!rows.length) flashRedirect('Import your Redbubble products using CSV, then generate marketing assets.');
 
   let inserted = 0;
   let skipped = 0;
@@ -292,7 +293,7 @@ async function replaceSyncedDesignImportsAction(formData: FormData) {
 
   const csv = await readCsvImportInput(formData);
   const rows = parseCsvRows(csv);
-  if (!rows.length) flashRedirect('Upload a sync CSV file or paste sync CSV text first.');
+  if (!rows.length) flashRedirect('Import your Redbubble products using CSV, then generate marketing assets.');
 
   const preparedRows = rows.map((row) => ({
     title: cleanText(row.title || row.name),
@@ -498,10 +499,19 @@ export default async function DesignLibraryPage({
             <div className="admin-topline">Visual design workflow</div>
             <h1>Design library</h1>
             <p className="admin-muted">
-              Upload or import InkWanderStudio design images directly, then generate Pinterest-ready visuals, searchable tags, captions, and future article hooks.
+              Import your Redbubble products, search your design catalog, and generate marketing assets from one clear workflow.
             </p>
           </div>
           <Link href="/admin" className="secondary-link">Back to admin</Link>
+        </div>
+
+        <AdminNav current="design-library" />
+
+        <div className="admin-actions">
+          <Link href="#import-designs" className="primary-link">Import CSV</Link>
+          <Link href="#design-records" className="secondary-link">Generate Pinterest Pins</Link>
+          <Link href="/admin/social-campaigns" className="secondary-link">Generate Social Drafts</Link>
+          <Link href="/admin/social-campaigns" className="secondary-link">View Drafts</Link>
         </div>
 
         {error && <div className="notice">{error}</div>}
@@ -513,8 +523,8 @@ export default async function DesignLibraryPage({
           <div className="stat-card"><span>{totals.uploaded}</span><p>Direct uploads</p></div>
         </div>
 
-        <form method="get" className="product-form admin-section">
-          <h2>Search and filter</h2>
+        <form id="design-search" method="get" className="product-form admin-section">
+          <h2>Search designs</h2>
           <p className="admin-muted">Search by title, keyword, notes, niche, mood, or product type.</p>
           <div className="design-filter-grid">
             <label className="field">
@@ -549,8 +559,13 @@ export default async function DesignLibraryPage({
           </div>
         </form>
 
+        <section id="import-designs" className="product-form admin-section">
+          <h2>Import designs</h2>
+          <p className="admin-muted">Import your Redbubble products using CSV, or add a design manually when you want full control over the image and notes.</p>
+        </section>
+
         <form action={createDesignAction} encType="multipart/form-data" className="product-form admin-section">
-          <h2>Add design</h2>
+          <h2>Add one design manually</h2>
           <p className="admin-muted">Upload a source image or paste an absolute image URL. Redbubble links are optional, and future AI metadata fields are ready now for later auto-tagging.</p>
           <div className="field-row">
             <label className="field">
@@ -616,9 +631,9 @@ export default async function DesignLibraryPage({
         </form>
 
         <section className="product-form admin-section">
-          <h2>Local Redbubble sync</h2>
-          <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps scraping local while the visual library stays online. The sync now aims to open each product page directly instead of trusting shop-grid image pairings.</p>
-          <div className="notice">This is the faster workflow: one sync CSV upload removes the previous synced Redbubble rows and imports the fresh ones in one step. Manual uploads and hand-entered designs stay untouched.</div>
+          <h2>Sync from your local Redbubble export</h2>
+          <p className="admin-muted">Recommended workflow: upload new designs to Redbubble, run <code>npm run scrape:redbubble</code> on your computer, then upload the generated <code>design-library-import.csv</code> file here. That keeps the sync local while your design library stays online.</p>
+          <div className="notice">Use one fresh sync CSV and the app will replace the older synced Redbubble rows automatically. Manual uploads and hand-entered designs stay untouched.</div>
           <ol className="admin-muted">
             <li>Open Terminal in the repo folder.</li>
             <li>Run <code>npm run scrape:redbubble</code>.</li>
@@ -628,29 +643,29 @@ export default async function DesignLibraryPage({
         </section>
 
         <form action={replaceSyncedDesignImportsAction} encType="multipart/form-data" className="product-form admin-section">
-          <h2>Reset + import synced CSV</h2>
-          <p className="admin-muted">Use this after running the local Redbubble sync. Upload one fresh <code>design-library-import.csv</code> file and the app will first reset the older synced Redbubble rows, then import the new synced rows automatically. Manual uploads and hand-entered designs stay untouched.</p>
+          <h2>Import synced CSV</h2>
+          <p className="admin-muted">Use this after running the local Redbubble sync. Upload one fresh <code>design-library-import.csv</code> file and the app will replace older synced rows, then import the new ones automatically.</p>
           <label className="field"><span>Upload sync CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
           <label className="field"><span>Or paste sync CSV data</span><textarea name="csv_data" rows={6} placeholder={'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood,notes,ai_keywords,ai_caption_seed,source\nFinancially Flexible Morally Exhausted,https://ih1.redbubble.net/image....jpg,https://www.redbubble.com/i/t-shirt/...,https://www.redbubble.com/i/t-shirt/...,millennial humor,"millennial humor, witty burnout",T Shirt,Witty Burnout,"Imported from the InkWanderStudio Redbubble shop via the local Playwright sync.","millennial humor, witty burnout","Financially Flexible Morally Exhausted by InkWanderStudio",redbubble-sync'} /></label>
-          <button type="submit" className="primary-link">Reset + import synced CSV</button>
+          <button type="submit" className="primary-link">Import CSV</button>
         </form>
 
         <form action={deleteBadSyncedDesignImportsAction} className="product-form admin-section">
-          <h2>Emergency cleanup for old broken syncs</h2>
-          <p className="admin-muted">Use this only if an older sync imported obviously wrong images or titles. It clears the earlier synced Redbubble rows so you can run the reset-and-import flow again from a clean slate.</p>
-          <button type="submit" className="primary-link">Delete bad synced imports</button>
+          <h2>Reset old synced imports</h2>
+          <p className="admin-muted">Use this only if an older sync imported obviously wrong images or titles. It clears older synced Redbubble rows so you can re-import a clean CSV.</p>
+          <button type="submit" className="primary-link">Reset synced imports</button>
         </form>
 
         <form action={csvDesignImportAction} encType="multipart/form-data" className="product-form admin-section">
-          <h2>CSV bulk import</h2>
-          <p className="admin-muted">Upload or paste CSV with <code>title</code>, <code>image_url</code>, <code>redbubble_url</code>, <code>niche</code>, and <code>tags</code>. Optional columns: <code>product_url</code>, <code>product_type</code>, <code>mood</code>, <code>notes</code>, <code>ai_keywords</code>, and <code>ai_caption_seed</code>. The local Redbubble sync generates this format automatically.</p>
+          <h2>Import additional CSV rows</h2>
+          <p className="admin-muted">Upload or paste CSV with <code>title</code>, <code>image_url</code>, <code>redbubble_url</code>, <code>niche</code>, and <code>tags</code>. Optional columns: <code>product_url</code>, <code>product_type</code>, <code>mood</code>, <code>notes</code>, <code>ai_keywords</code>, and <code>ai_caption_seed</code>. This is the easiest way to bring Google Sheets or Redbubble export data into the library.</p>
           <label className="field"><span>Upload CSV file</span><input name="csv_file" type="file" accept=".csv,text/csv" /></label>
           <label className="field"><span>Or paste CSV data</span><textarea name="csv_data" rows={8} placeholder={'title,image_url,redbubble_url,product_url,niche,tags,product_type,mood\nAll You Need Is Pancakes,https://example.com/pancakes.jpg,https://www.redbubble.com/i/sticker/...,https://www.redbubble.com/i/sticker/...,relatable stickers,"cute breakfast, sticker",Sticker,Soft relatable'} /></label>
-          <button type="submit" className="primary-link">Import CSV designs</button>
+          <button type="submit" className="primary-link">Import CSV</button>
         </form>
 
-        <div className="admin-section design-library-grid">
-          <h2>Design records</h2>
+        <div id="design-records" className="admin-section design-library-grid">
+          <h2>Design cards</h2>
           {!error && filteredDesigns.length === 0 && (
             <div className="empty-state">No designs match the current filters yet.</div>
           )}
@@ -668,7 +683,7 @@ export default async function DesignLibraryPage({
               <article key={design.id} className="design-library-card">
                 <div className="pin-workflow-post-head">
                   <div>
-                    <p className="eyebrow">{cleanText(design.source, 'manual')} · active</p>
+                    <p className="eyebrow">{cleanText(design.source, 'design library')}</p>
                     <h2>{design.title}</h2>
                     <p className="admin-muted">
                       {niche} · {productType} · {mood}
@@ -688,7 +703,7 @@ export default async function DesignLibraryPage({
                     <form action={designPinsAction}>
                       <input type="hidden" name="design_id" value={design.id} />
                       <button type="submit" className="primary-link small">
-                        {pins.length ? 'Regenerate pins' : 'Generate pins'}
+                        {pins.length ? 'Regenerate Pinterest Pins' : 'Generate Pinterest Pins'}
                       </button>
                     </form>
                   </div>
@@ -704,7 +719,7 @@ export default async function DesignLibraryPage({
                     />
 
                     <div className="tracked-url-box">
-                      <small>Library source</small>
+                      <small>Image source</small>
                       <code>{cleanText(design.image_url).startsWith('data:image/') ? 'Uploaded image stored inline' : cleanText(design.image_url)}</code>
                     </div>
 
@@ -714,9 +729,9 @@ export default async function DesignLibraryPage({
                         <div className="design-tag-row">{tagPills(tags)}</div>
                       </div>
                       <div>
-                        <strong>AI-ready fields</strong>
+                        <strong>Search terms</strong>
                         <p className="admin-muted">
-                          {aiKeywords.length ? aiKeywords.join(', ') : 'No AI keywords yet'} · {cleanText(design.ai_caption_seed, 'No caption seed yet')}
+                          {aiKeywords.length ? aiKeywords.join(', ') : 'No search terms yet'} · {cleanText(design.ai_caption_seed, 'No caption notes yet')}
                         </p>
                       </div>
                       {design.notes && (
@@ -731,7 +746,7 @@ export default async function DesignLibraryPage({
                   <div className="design-library-pins">
                     {pins.length === 0 ? (
                       <div className="empty-card">
-                        <p>No Pinterest pin drafts yet. Generate pins to turn this uploaded design into Pinterest-ready visuals and captions.</p>
+                        <p>No Pinterest pin drafts yet. Generate Pinterest Pins to turn this design into marketing-ready visuals and captions.</p>
                       </div>
                     ) : (
                       <div className="pin-grid">
