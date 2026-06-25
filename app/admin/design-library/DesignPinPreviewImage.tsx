@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 type DesignPinPreviewImageProps = {
   src: string;
+  fallbackSrc?: string;
   title: string;
   niche?: string;
   description?: string;
@@ -28,48 +29,59 @@ function shortText(value: unknown, maxLength: number) {
   return `${output.join(' ').replace(/[,.!?;:]$/, '')}...`;
 }
 
-export default function DesignPinPreviewImage({ src, title, niche, description }: DesignPinPreviewImageProps) {
+export default function DesignPinPreviewImage({ src, fallbackSrc, title, niche, description }: DesignPinPreviewImageProps) {
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [blobUrl, setBlobUrl] = useState('');
   const previewTitle = shortText(title, 58) || 'InkWanderStudio Pinterest Pin';
   const previewNiche = shortText(niche, 34) || 'Relatable stickers';
   const previewDescription = shortText(description, 120) || 'A generated Pinterest pin preview will appear here.';
+  const previewFallbackSrc = cleanText(fallbackSrc);
 
   useEffect(() => {
     let revokedUrl = '';
     const controller = new AbortController();
+    const candidateSources = [cleanText(src), previewFallbackSrc].filter(Boolean);
 
     setFailed(false);
     setLoading(true);
     setBlobUrl('');
 
-    fetch(src, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const contentType = response.headers.get('content-type') || '';
-        if (!response.ok || !contentType.toLowerCase().startsWith('image/')) {
-          throw new Error(`preview-image-invalid:${response.status}:${contentType}`);
+    const loadPreviewImage = async () => {
+      for (const candidate of candidateSources) {
+        try {
+          const response = await fetch(candidate, {
+            method: 'GET',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || !contentType.toLowerCase().startsWith('image/')) {
+            throw new Error(`preview-image-invalid:${response.status}:${contentType}`);
+          }
+
+          const blob = await response.blob();
+          revokedUrl = URL.createObjectURL(blob);
+          setBlobUrl(revokedUrl);
+          setLoading(false);
+          return;
+        } catch {
+          if (controller.signal.aborted) return;
         }
-        const blob = await response.blob();
-        revokedUrl = URL.createObjectURL(blob);
-        setBlobUrl(revokedUrl);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setFailed(true);
-        setLoading(false);
-      });
+      }
+
+      setFailed(true);
+      setLoading(false);
+    };
+
+    loadPreviewImage();
 
     return () => {
       controller.abort();
       if (revokedUrl) URL.revokeObjectURL(revokedUrl);
     };
-  }, [src]);
+  }, [src, previewFallbackSrc]);
 
   if (failed) {
     return (
@@ -97,8 +109,16 @@ export default function DesignPinPreviewImage({ src, title, niche, description }
           </span>
         </div>
 
-        <div style={{ minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: 110, height: 110, borderRadius: 24, background: '#fffaf3', border: '4px solid #17211b', transform: 'rotate(-5deg)', boxShadow: '0 16px 24px rgba(23, 33, 27, 0.16)' }} />
+        <div style={{ minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: 18, background: 'rgba(255,255,255,0.72)' }}>
+          {previewFallbackSrc ? (
+            <img
+              src={previewFallbackSrc}
+              alt={previewTitle}
+              style={{ width: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 18 }}
+            />
+          ) : (
+            <div style={{ width: 110, height: 110, borderRadius: 24, background: '#fffaf3', border: '4px solid #17211b', transform: 'rotate(-5deg)', boxShadow: '0 16px 24px rgba(23, 33, 27, 0.16)' }} />
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -414,9 +414,10 @@ export default async function SocialCampaignsPage({
 
                     <div className="campaign-preview-layout">
                       <div className="campaign-preview-media">
-                        {channel === 'pinterest' && cleanText(campaign.generated_image_url) ? (
+                        {channel === 'pinterest' ? (
                           <DesignPinPreviewImage
                             src={cleanText(campaign.generated_image_url)}
+                            fallbackSrc={cleanText(campaign.image_url || campaign.design_image_url)}
                             title={campaign.title}
                             niche={campaign.design_niche}
                             description={campaign.caption}
