@@ -1915,3 +1915,173 @@ p {
     font-size: 24px;
   }
 }
+
+.campaign-summary-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.campaign-action-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr;
+  gap: 16px;
+  align-items: end;
+}
+
+.campaign-inline-form,
+.campaign-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-field span {
+  display: block;
+}
+
+.compact-field input,
+.compact-field select {
+  margin-top: 8px;
+}
+
+.campaign-card {
+  display: grid;
+  gap: 18px;
+}
+
+.campaign-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.campaign-badge,
+.campaign-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.campaign-badge.channel-pinterest {
+  background: #fbe3de;
+  color: #b6422e;
+}
+
+.campaign-badge.channel-instagram {
+  background: #f4e5ff;
+  color: #7a3ec8;
+}
+
+.campaign-badge.channel-facebook {
+  background: #dbe9ff;
+  color: #1f5fcc;
+}
+
+.campaign-status.status-draft {
+  background: #f4efe7;
+  color: #776b5d;
+}
+
+.campaign-status.status-ready {
+  background: #def4e5;
+  color: #1d7a44;
+}
+
+.campaign-status.status-scheduled {
+  background: #fff1cf;
+  color: #9a6a00;
+}
+
+.campaign-status.status-published {
+  background: #ddeee7;
+  color: #1b6b58;
+}
+
+.campaign-status.status-failed {
+  background: #fde1de;
+  color: #b33f32;
+}
+
+.campaign-meta-text {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.campaign-preview-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.campaign-preview-media {
+  min-width: 0;
+}
+
+.campaign-preview-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.campaign-preview-copy p {
+  margin: 0;
+}
+
+.campaign-checkbox-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.campaign-checkbox-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fffaf2;
+  padding: 14px 16px;
+}
+
+.campaign-checkbox-item input {
+  margin-top: 4px;
+}
+
+.campaign-checkbox-item strong,
+.campaign-checkbox-item small {
+  display: block;
+}
+
+.campaign-checkbox-item small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.campaign-bulk-actions {
+  display: grid;
+  gap: 14px;
+}
+
+@media (max-width: 1100px) {
+  .campaign-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .campaign-action-grid,
+  .campaign-preview-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .campaign-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -18,6 +18,7 @@ import {
   parseList,
   validateDesignImageUrl,
 } from '@/lib/designLibrary';
+import { generateCampaignDraftsForAllReadyDesigns, generateCampaignDraftsForDesignId } from '@/lib/socialCampaigns';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -427,6 +428,29 @@ async function designPinsAction(formData: FormData) {
   flashRedirect(`Generated ${attachedPins.length} Pinterest pin drafts for ${design.title}.`);
 }
 
+async function designSocialDraftsAction(formData: FormData) {
+  'use server';
+
+  await ensureDesignLibraryTable();
+
+  const designId = cleanText(formData.get('design_id'));
+  if (!designId) redirect('/admin/design-library');
+
+  const result = await generateCampaignDraftsForDesignId(designId);
+  const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 3).join(' | ')}` : '';
+  flashRedirect(`Generated ${result.imported} social campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+}
+
+async function generateAllSocialDraftsAction() {
+  'use server';
+
+  await ensureDesignLibraryTable();
+
+  const result = await generateCampaignDraftsForAllReadyDesigns();
+  const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 4).join(' | ')}` : '';
+  flashRedirect(`Generated ${result.imported} social campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+}
+
 function tagPills(tags: string[]) {
   return tags.map((tag) => (
     <span key={tag} className="design-tag-pill">{tag}</span>
@@ -510,7 +534,9 @@ export default async function DesignLibraryPage({
         <div className="admin-actions">
           <Link href="#import-designs" className="primary-link">Import CSV</Link>
           <Link href="#design-records" className="secondary-link">Generate Pinterest Pins</Link>
-          <Link href="/admin/social-campaigns" className="secondary-link">Generate Social Drafts</Link>
+          <form action={generateAllSocialDraftsAction}>
+            <button type="submit" className="secondary-link">Generate Social Drafts</button>
+          </form>
           <Link href="/admin/social-campaigns" className="secondary-link">View Drafts</Link>
         </div>
 
@@ -705,6 +731,10 @@ export default async function DesignLibraryPage({
                       <button type="submit" className="primary-link small">
                         {pins.length ? 'Regenerate Pinterest Pins' : 'Generate Pinterest Pins'}
                       </button>
+                    </form>
+                    <form action={designSocialDraftsAction}>
+                      <input type="hidden" name="design_id" value={design.id} />
+                      <button type="submit" className="secondary-link small">Generate Social Drafts</button>
                     </form>
                   </div>
                 </div>
