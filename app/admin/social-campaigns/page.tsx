@@ -3,8 +3,10 @@ import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import DesignPinPreviewImage from '../design-library/DesignPinPreviewImage';
 import AdminNav from '../AdminNav';
+import CampaignBulkToggle from './CampaignBulkToggle';
 import {
   deleteCampaigns,
+  deleteTestCampaigns,
   ensureSocialCampaignsTable,
   generateCampaignDraftsForAllReadyDesigns,
   generateCampaignDraftsForDesignId,
@@ -14,6 +16,8 @@ import {
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const TEST_BATCH_TAG = 'test-campaign';
 
 type SearchParams = Promise<{
   notice?: string;
@@ -100,23 +104,33 @@ function nicheFor(campaign: any) {
   return cleanText(campaign.design_niche, 'InkWanderStudio');
 }
 
+function generationMessage(result: any, label: string) {
+  const reasons = result.reasons?.length ? ` Failed ${result.failed} with reasons: ${result.reasons.slice(0, 4).join(' | ')}` : ` Failed ${result.failed}.`;
+  return `${label} Created ${result.createdPinterest} Pinterest drafts, ${result.createdInstagram} Instagram drafts, and ${result.createdFacebook} Facebook drafts. Skipped ${result.skipped} duplicates.${reasons}`;
+}
+
 async function generateOneDesignCampaignAction(formData: FormData) {
   'use server';
 
   const designId = cleanText(formData.get('design_id'));
-  if (!designId) flashRedirect('Pick a design first.');
+  if (!designId) flashRedirect('Pick a ready design first.');
 
   const result = await generateCampaignDraftsForDesignId(designId);
-  const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 3).join(' | ')}` : '';
-  flashRedirect(`Generated ${result.imported} campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+  flashRedirect(generationMessage(result, 'Generated selected design campaigns.'));
 }
 
-async function generateAllCampaignsAction() {
+async function generateTestCampaignsAction() {
   'use server';
 
-  const result = await generateCampaignDraftsForAllReadyDesigns();
-  const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 4).join(' | ')}` : '';
-  flashRedirect(`Generated ${result.imported} campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+  const result = await generateCampaignDraftsForAllReadyDesigns({ limit: 3, batchTag: TEST_BATCH_TAG });
+  flashRedirect(generationMessage(result, 'Generated test campaigns for up to 3 ready designs.'));
+}
+
+async function deleteTestCampaignsAction() {
+  'use server';
+
+  const deleted = await deleteTestCampaigns(TEST_BATCH_TAG);
+  flashRedirect(`Deleted ${deleted} test campaigns.`);
 }
 
 async function regenerateSingleCampaignAction(formData: FormData) {
@@ -135,7 +149,6 @@ async function updateSingleCampaignAction(formData: FormData) {
 
   const campaignId = cleanText(formData.get('campaign_id'));
   const intent = cleanText(formData.get('intent'));
-  const scheduledAt = cleanText(formData.get('scheduled_at')) || null;
   if (!campaignId) flashRedirect('Campaign not found.');
 
   if (intent === 'delete') {
@@ -143,22 +156,16 @@ async function updateSingleCampaignAction(formData: FormData) {
     flashRedirect('Deleted 1 campaign.');
   }
 
-  if (intent === 'schedule' && !scheduledAt) {
-    flashRedirect('Add a date and time before scheduling this campaign.');
-  }
-
-  const statusMap: Record<string, 'draft' | 'ready' | 'scheduled' | 'published' | 'failed'> = {
+  const statusMap: Record<string, 'draft' | 'ready' | 'published'> = {
     draft: 'draft',
     ready: 'ready',
-    schedule: 'scheduled',
     published: 'published',
-    failed: 'failed',
   };
 
   const nextStatus = statusMap[intent];
   if (!nextStatus) flashRedirect('Unknown campaign action.');
 
-  await updateCampaignStatus([campaignId], nextStatus, scheduledAt);
+  await updateCampaignStatus([campaignId], nextStatus);
   flashRedirect(`Updated 1 campaign to ${formatStatus(nextStatus).toLowerCase()}.`);
 }
 
@@ -167,31 +174,22 @@ async function bulkCampaignAction(formData: FormData) {
 
   const ids = formData.getAll('campaign_id').map((value) => cleanText(value)).filter(Boolean);
   const intent = cleanText(formData.get('intent'));
-  const scheduledAt = cleanText(formData.get('scheduled_at')) || null;
 
-  if (!ids.length) flashRedirect('Select at least one campaign first.');
+  if (!ids.length) flashRedirect('Select at least one visible campaign first.');
 
   if (intent === 'delete') {
     const deleted = await deleteCampaigns(ids);
     flashRedirect(`Deleted ${deleted} campaigns.`);
   }
 
-  if (intent === 'schedule' && !scheduledAt) {
-    flashRedirect('Add a date and time before scheduling selected campaigns.');
-  }
-
-  const statusMap: Record<string, 'draft' | 'ready' | 'scheduled' | 'published' | 'failed'> = {
-    draft: 'draft',
+  const statusMap: Record<string, 'ready'> = {
     ready: 'ready',
-    schedule: 'scheduled',
-    published: 'published',
-    failed: 'failed',
   };
 
   const nextStatus = statusMap[intent];
   if (!nextStatus) flashRedirect('Unknown bulk action.');
 
-  const updated = await updateCampaignStatus(ids, nextStatus, scheduledAt);
+  const updated = await updateCampaignStatus(ids, nextStatus);
   flashRedirect(`Updated ${updated} campaigns to ${formatStatus(nextStatus).toLowerCase()}.`);
 }
 
@@ -240,6 +238,9 @@ export default async function SocialCampaignsPage({
   const selectedDesignId = cleanText(params.design_id);
 
   const readyDesigns = designs.filter((design) => cleanText(design.image_url) && cleanText(design.redbubble_url || design.product_url));
+  const missingImageCount = designs.filter((design) => !cleanText(design.image_url)).length;
+  const missingLinkCount = designs.filter((design) => !cleanText(design.redbubble_url || design.product_url)).length;
+  const testCampaignCount = campaigns.filter((campaign) => cleanText(campaign.batch_tag) === TEST_BATCH_TAG).length;
 
   const filteredCampaigns = campaigns.filter((campaign) => {
     const channel = cleanText(campaign.channel).toLowerCase();
@@ -251,11 +252,12 @@ export default async function SocialCampaignsPage({
       campaign.board_name,
       ...readStringArray(campaign.hashtags),
       ...readStringArray(campaign.keywords),
+      campaign.batch_tag,
     ].join(' ').toLowerCase();
 
     if (selectedChannel && channel !== selectedChannel) return false;
     if (selectedStatus && status !== selectedStatus) return false;
-    if (selectedDesignId && cleanText(campaign.design_id) !== selectedDesignId) return false;
+    if (selectedDesignId && cleanText(campaign.design_id) != selectedDesignId) return false;
     if (query && !haystack.includes(query)) return false;
     return true;
   });
@@ -279,7 +281,7 @@ export default async function SocialCampaignsPage({
             <div className="admin-topline">Social campaign workflow</div>
             <h1>Social campaign queue</h1>
             <p className="admin-muted">
-              Generate Pinterest, Instagram, and Facebook drafts from your Design Library, then move them through one simple queue.
+              Test Pinterest, Instagram, and Facebook drafts on a small safe batch first, then move them through one simple queue.
             </p>
           </div>
           <Link href="/admin/design-library" className="secondary-link">Back to Design Library</Link>
@@ -300,26 +302,41 @@ export default async function SocialCampaignsPage({
         </div>
 
         <section className="product-form admin-section">
-          <h2>Generate campaigns</h2>
-          <p className="admin-muted">Import your Redbubble products using CSV, then generate marketing assets from your ready designs.</p>
+          <h2>Safe test mode</h2>
+          <p className="admin-muted">Generate campaigns for only 3 ready designs, tag them as test campaigns, review them, then delete them in one click.</p>
           <div className="campaign-action-grid">
-            <form action={generateAllCampaignsAction} className="campaign-inline-form">
-              <button type="submit" className="primary-link">Generate campaigns for all Ready designs</button>
+            <form action={generateTestCampaignsAction} className="campaign-inline-form">
+              <button type="submit" className="primary-link">Generate campaigns for 3 Ready designs</button>
+              <p className="admin-muted">Current test campaigns in queue: {testCampaignCount}</p>
             </form>
 
-            <form action={generateOneDesignCampaignAction} className="campaign-inline-form">
-              <label className="field compact-field">
-                <span>Generate campaigns for one design</span>
-                <select name="design_id" defaultValue="">
-                  <option value="">Pick a ready design</option>
-                  {readyDesigns.map((design) => (
-                    <option key={design.id} value={design.id}>{design.title}</option>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" className="secondary-link">Generate selected design</button>
+            <form action={deleteTestCampaignsAction} className="campaign-inline-form">
+              <button type="submit" className="secondary-link">Delete test campaigns</button>
+              <p className="admin-muted">This only removes campaigns tagged as test campaigns.</p>
             </form>
           </div>
+        </section>
+
+        <section className="product-form admin-section">
+          <h2>Generate campaigns for one design</h2>
+          <p className="admin-muted">Use this when you want to test one ready design before making a wider batch.</p>
+          <form action={generateOneDesignCampaignAction} className="campaign-inline-form">
+            <label className="field compact-field">
+              <span>Ready design</span>
+              <select name="design_id" defaultValue="">
+                <option value="">Pick a ready design</option>
+                {readyDesigns.map((design) => (
+                  <option key={design.id} value={design.id}>{`${design.title} · ${cleanText(design.product_type, 'Product')} · ${cleanText(design.niche, 'InkWanderStudio')}`}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="secondary-link">Generate selected design</button>
+          </form>
+          {readyDesigns.length === 0 && (
+            <div className="inline-notice">
+              No ready designs are available yet. {missingImageCount > 0 ? `${missingImageCount} design(s) are missing an image.` : ''} {missingLinkCount > 0 ? `${missingLinkCount} design(s) are missing a Redbubble link.` : ''}
+            </div>
+          )}
         </section>
 
         <form method="get" className="product-form admin-section">
@@ -344,9 +361,7 @@ export default async function SocialCampaignsPage({
                 <option value="">All statuses</option>
                 <option value="draft">Draft</option>
                 <option value="ready">Ready</option>
-                <option value="scheduled">Scheduled</option>
                 <option value="published">Published</option>
-                <option value="failed">Failed</option>
               </select>
             </label>
             <label className="field">
@@ -366,7 +381,7 @@ export default async function SocialCampaignsPage({
         </form>
 
         {filteredCampaigns.length === 0 ? (
-          <div className="empty-state">No campaigns match the current filters yet. Generate campaigns from your ready designs to populate the queue.</div>
+          <div className="empty-state">No campaigns match the current filters yet. Start with the 3-design test batch or generate one selected design.</div>
         ) : (
           <>
             <div className="pin-workflow-list">
@@ -375,18 +390,21 @@ export default async function SocialCampaignsPage({
                 const keywords = readStringArray(campaign.keywords);
                 const carouselIdeas = readStringArray(campaign.carousel_ideas);
                 const targetUrl = targetUrlFor(campaign);
+                const channel = cleanText(campaign.channel).toLowerCase();
+                const batchTag = cleanText(campaign.batch_tag);
 
                 return (
                   <article key={campaign.id} className="pin-workflow-post campaign-card">
                     <div className="pin-workflow-post-head">
                       <div>
                         <div className="campaign-meta-row">
-                          <span className={`campaign-badge channel-${cleanText(campaign.channel).toLowerCase()}`}>{formatChannel(campaign.channel)}</span>
+                          <span className={`campaign-badge channel-${channel}`}>{formatChannel(campaign.channel)}</span>
                           <span className={`campaign-status status-${cleanText(campaign.status || 'draft').toLowerCase()}`}>{formatStatus(campaign.status)}</span>
+                          {batchTag && <span className="campaign-flag">{batchTag}</span>}
                           <span className="campaign-meta-text">{campaign.design_title}</span>
                         </div>
                         <h2>{campaign.title}</h2>
-                        <p className="admin-muted">{nicheFor(campaign)} · {productTypeFor(campaign)}{campaign.board_name ? ` · Board: ${campaign.board_name}` : ''}</p>
+                        <p className="admin-muted">{nicheFor(campaign)} · {productTypeFor(campaign)}</p>
                       </div>
                       <div className="pin-workflow-actions">
                         {targetUrl && <Link href={targetUrl} target="_blank" className="secondary-link small">Open link</Link>}
@@ -396,7 +414,7 @@ export default async function SocialCampaignsPage({
 
                     <div className="campaign-preview-layout">
                       <div className="campaign-preview-media">
-                        {cleanText(campaign.channel).toLowerCase() === 'pinterest' && cleanText(campaign.generated_image_url) ? (
+                        {channel === 'pinterest' && cleanText(campaign.generated_image_url) ? (
                           <DesignPinPreviewImage
                             src={cleanText(campaign.generated_image_url)}
                             title={campaign.title}
@@ -414,7 +432,28 @@ export default async function SocialCampaignsPage({
                       </div>
 
                       <div className="campaign-preview-copy">
-                        <p>{compactText(campaign.caption, 240) || 'No caption saved yet.'}</p>
+                        {channel === 'pinterest' && (
+                          <>
+                            <p><strong>Pin title:</strong> {campaign.title}</p>
+                            <p><strong>Description:</strong> {compactText(campaign.caption, 240)}</p>
+                            <p><strong>Board recommendation:</strong> {cleanText(campaign.board_name, 'Not saved yet')}</p>
+                            <p><strong>Target URL:</strong> {targetUrl || 'Missing target URL'}</p>
+                          </>
+                        )}
+
+                        {channel === 'instagram' && (
+                          <>
+                            <p><strong>Caption:</strong> {compactText(campaign.caption, 240)}</p>
+                            <p><strong>Redbubble URL:</strong> {targetUrl || 'Missing target URL'}</p>
+                          </>
+                        )}
+
+                        {channel === 'facebook' && (
+                          <>
+                            <p><strong>Post text:</strong> {compactText(campaign.caption, 240)}</p>
+                            <p><strong>Redbubble URL:</strong> {targetUrl || 'Missing target URL'}</p>
+                          </>
+                        )}
 
                         {hashtags.length > 0 && (
                           <div>
@@ -423,11 +462,11 @@ export default async function SocialCampaignsPage({
                           </div>
                         )}
 
-                        {keywords.length > 0 && (
+                        {keywords.length > 0 && channel === 'pinterest' && (
                           <p className="admin-muted"><strong>Keywords:</strong> {keywords.join(', ')}</p>
                         )}
 
-                        {carouselIdeas.length > 0 && (
+                        {carouselIdeas.length > 0 && channel === 'instagram' && (
                           <details className="design-article-box">
                             <summary>Carousel ideas</summary>
                             <ul className="design-idea-list">
@@ -435,26 +474,15 @@ export default async function SocialCampaignsPage({
                             </ul>
                           </details>
                         )}
-
-                        <p className="admin-muted">
-                          {campaign.scheduled_at ? `Scheduled for ${formatDateTime(campaign.scheduled_at)}.` : 'Not scheduled yet.'}
-                          {campaign.published_at ? ` Published ${formatDateTime(campaign.published_at)}.` : ''}
-                        </p>
                       </div>
                     </div>
 
                     <form action={updateSingleCampaignAction} className="campaign-controls">
                       <input type="hidden" name="campaign_id" value={campaign.id} />
-                      <label className="field compact-field">
-                        <span>Schedule date & time</span>
-                        <input name="scheduled_at" type="datetime-local" defaultValue="" />
-                      </label>
                       <div className="pin-workflow-actions">
                         <button type="submit" formAction={regenerateSingleCampaignAction} className="secondary-link small">Regenerate</button>
                         <button type="submit" name="intent" value="ready" className="secondary-link small">Mark Ready</button>
-                        <button type="submit" name="intent" value="schedule" className="secondary-link small">Schedule</button>
                         <button type="submit" name="intent" value="published" className="secondary-link small">Mark Published</button>
-                        <button type="submit" name="intent" value="failed" className="secondary-link small">Mark Failed</button>
                         <button type="submit" name="intent" value="delete" className="secondary-link small">Delete</button>
                       </div>
                     </form>
@@ -464,12 +492,13 @@ export default async function SocialCampaignsPage({
             </div>
 
             <form action={bulkCampaignAction} className="product-form admin-section">
-              <h2>Bulk select</h2>
-              <p className="admin-muted">Pick campaigns to move through the queue together.</p>
+              <h2>Bulk actions</h2>
+              <p className="admin-muted">Select visible campaigns, then move them together.</p>
+              <CampaignBulkToggle />
               <div className="campaign-checkbox-list">
                 {filteredCampaigns.map((campaign) => (
                   <label key={`bulk-${campaign.id}`} className="campaign-checkbox-item">
-                    <input type="checkbox" name="campaign_id" value={campaign.id} />
+                    <input data-campaign-checkbox="true" type="checkbox" name="campaign_id" value={campaign.id} />
                     <span>
                       <strong>{campaign.title}</strong>
                       <small>{formatChannel(campaign.channel)} · {formatStatus(campaign.status)} · {campaign.design_title}</small>
@@ -478,16 +507,9 @@ export default async function SocialCampaignsPage({
                 ))}
               </div>
               <div className="campaign-bulk-actions">
-                <label className="field compact-field">
-                  <span>Schedule selected at</span>
-                  <input name="scheduled_at" type="datetime-local" defaultValue="" />
-                </label>
                 <div className="pin-workflow-actions">
                   <button type="submit" name="intent" value="ready" className="secondary-link">Mark Ready</button>
-                  <button type="submit" name="intent" value="schedule" className="secondary-link">Schedule</button>
-                  <button type="submit" name="intent" value="published" className="secondary-link">Mark Published</button>
-                  <button type="submit" name="intent" value="failed" className="secondary-link">Mark Failed</button>
-                  <button type="submit" name="intent" value="delete" className="primary-link">Delete</button>
+                  <button type="submit" name="intent" value="delete" className="primary-link">Delete selected</button>
                 </div>
               </div>
             </form>

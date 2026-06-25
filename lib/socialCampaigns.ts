@@ -4,6 +4,7 @@ import {
   buildArticleIdeas,
   DesignPin,
   DesignRecord,
+  ensureDesignLibraryTable,
   generateDesignPinterestPins,
   normalizeDesignPinterestMeta,
   normalizeMood,
@@ -11,11 +12,25 @@ import {
   normalizeProductType,
   normalizeTags,
   parseList,
-  ensureDesignLibraryTable,
 } from '@/lib/designLibrary';
 
 export type SocialChannel = 'pinterest' | 'instagram' | 'facebook';
 export type SocialStatus = 'draft' | 'ready' | 'scheduled' | 'published' | 'failed';
+
+export type CampaignGenerationSummary = {
+  createdPinterest: number;
+  createdInstagram: number;
+  createdFacebook: number;
+  skipped: number;
+  failed: number;
+  reasons: string[];
+  designCount: number;
+  batchTag: string;
+};
+
+type CampaignBuildOptions = {
+  batchTag?: string;
+};
 
 function cleanText(value: unknown, fallback = '') {
   return String(value || fallback).replace(/\s+/g, ' ').trim();
@@ -125,6 +140,30 @@ function designIsReady(design: Partial<DesignRecord>) {
   return Boolean(cleanText(design.image_url) && designTargetUrl(design));
 }
 
+function emptySummary(batchTag = ''): CampaignGenerationSummary {
+  return {
+    createdPinterest: 0,
+    createdInstagram: 0,
+    createdFacebook: 0,
+    skipped: 0,
+    failed: 0,
+    reasons: [],
+    designCount: 0,
+    batchTag,
+  };
+}
+
+function mergeSummaries(target: CampaignGenerationSummary, source: CampaignGenerationSummary) {
+  target.createdPinterest += source.createdPinterest;
+  target.createdInstagram += source.createdInstagram;
+  target.createdFacebook += source.createdFacebook;
+  target.skipped += source.skipped;
+  target.failed += source.failed;
+  target.designCount += source.designCount;
+  target.reasons.push(...source.reasons);
+  return target;
+}
+
 async function updateDesignPins(design: DesignRecord, pins: DesignPin[]) {
   const articleIdeas = buildArticleIdeas(design);
   await sql`
@@ -166,6 +205,7 @@ export async function ensureSocialCampaignsTable() {
       board_name text,
       keywords jsonb default '[]'::jsonb,
       carousel_ideas jsonb default '[]'::jsonb,
+      batch_tag text default '',
       status text default 'draft',
       scheduled_at timestamptz,
       published_at timestamptz,
@@ -174,9 +214,11 @@ export async function ensureSocialCampaignsTable() {
     )
   `;
 
+  await sql`alter table social_campaigns add column if not exists batch_tag text default ''`;
   await sql`create index if not exists social_campaigns_design_idx on social_campaigns(design_id)`;
   await sql`create index if not exists social_campaigns_channel_idx on social_campaigns(channel)`;
   await sql`create index if not exists social_campaigns_status_idx on social_campaigns(status)`;
+  await sql`create index if not exists social_campaigns_batch_tag_idx on social_campaigns(batch_tag)`;
   await sql`create unique index if not exists social_campaigns_design_channel_variant_idx on social_campaigns(design_id, channel, variant_index)`;
 }
 
@@ -191,7 +233,7 @@ async function getDesignById(designId: string) {
   return design as DesignRecord | undefined;
 }
 
-function buildInstagramCampaign(design: DesignRecord) {
+function buildInstagramCampaign(design: DesignRecord, batchTag: string) {
   const targetUrl = designTargetUrl(design);
   return {
     channel: 'instagram' as const,
@@ -205,11 +247,12 @@ function buildInstagramCampaign(design: DesignRecord) {
     board_name: '',
     keywords: normalizeTags(design.tags, design).slice(0, 6),
     carousel_ideas: buildInstagramCarouselIdeas(design),
+    batch_tag: batchTag,
     status: 'draft' as const,
   };
 }
 
-function buildFacebookCampaign(design: DesignRecord) {
+function buildFacebookCampaign(design: DesignRecord, batchTag: string) {
   const targetUrl = designTargetUrl(design);
   return {
     channel: 'facebook' as const,
@@ -223,11 +266,13 @@ function buildFacebookCampaign(design: DesignRecord) {
     board_name: '',
     keywords: normalizeTags(design.tags, design).slice(0, 6),
     carousel_ideas: [],
+    batch_tag: batchTag,
     status: 'draft' as const,
   };
 }
 
-async function buildCampaignDrafts(design: DesignRecord) {
+async function buildCampaignDrafts(design: DesignRecord, options: CampaignBuildOptions = {}) {
+  const batchTag = cleanText(options.batchTag);
   const targetUrl = designTargetUrl(design);
   const pinterestPins = await ensurePinterestPins(design, 5);
 
@@ -243,29 +288,36 @@ async function buildCampaignDrafts(design: DesignRecord) {
     board_name: boardRecommendation(design, pin),
     keywords: Array.isArray(pin.keyword_focus) ? pin.keyword_focus.slice(0, 6) : normalizeTags(design.tags, design).slice(0, 6),
     carousel_ideas: [],
+    batch_tag: batchTag,
     status: 'draft' as const,
   }));
 
   return [
     ...pinterest,
-    buildInstagramCampaign(design),
-    buildFacebookCampaign(design),
+    buildInstagramCampaign(design, batchTag),
+    buildFacebookCampaign(design, batchTag),
   ];
 }
 
-export async function generateCampaignDraftsForDesignId(designId: string) {
+export async function generateCampaignDraftsForDesignId(designId: string, options: CampaignBuildOptions = {}) {
   await ensureSocialCampaignsTable();
 
+  const batchTag = cleanText(options.batchTag);
+  const summary = emptySummary(batchTag);
   const design = await getDesignById(designId);
   if (!design) {
-    return { imported: 0, skipped: 1, rejected: 1, reasons: ['Design not found.'] };
+    summary.failed = 1;
+    summary.reasons.push('Design not found.');
+    return summary;
   }
 
   if (!designIsReady(design)) {
-    return { imported: 0, skipped: 1, rejected: 1, reasons: [`${cleanText(design.title, 'Design')}: add an image and product link first.`] };
+    summary.failed = 1;
+    summary.reasons.push(`${cleanText(design.title, 'Design')}: add an image and product link first.`);
+    return summary;
   }
 
-  const drafts = await buildCampaignDrafts(design);
+  const drafts = await buildCampaignDrafts(design, { batchTag });
   const existing = await sql`
     select channel, variant_index, title
     from social_campaigns
@@ -275,17 +327,13 @@ export async function generateCampaignDraftsForDesignId(designId: string) {
   const existingKeys = new Set(existing.map((row: any) => `${row.channel}:${Number(row.variant_index || 0)}`));
   const existingTitles = new Set(existing.map((row: any) => `${row.channel}:${cleanText(row.title).toLowerCase()}`));
 
-  let imported = 0;
-  let skipped = 0;
-  const reasons: string[] = [];
-
   for (const draft of drafts) {
     const variantKey = `${draft.channel}:${draft.variant_index}`;
     const titleKey = `${draft.channel}:${cleanText(draft.title).toLowerCase()}`;
 
     if (existingKeys.has(variantKey) || existingTitles.has(titleKey)) {
-      skipped += 1;
-      reasons.push(`${draft.title}: campaign already exists`);
+      summary.skipped += 1;
+      summary.reasons.push(`${draft.title}: campaign already exists`);
       continue;
     }
 
@@ -304,6 +352,7 @@ export async function generateCampaignDraftsForDesignId(designId: string) {
         board_name,
         keywords,
         carousel_ideas,
+        batch_tag,
         status,
         created_at,
         updated_at
@@ -321,21 +370,27 @@ export async function generateCampaignDraftsForDesignId(designId: string) {
         ${draft.board_name || null},
         ${JSON.stringify(draft.keywords)}::jsonb,
         ${JSON.stringify(draft.carousel_ideas)}::jsonb,
+        ${draft.batch_tag || ''},
         ${draft.status},
         now(),
         now()
       )
     `;
 
-    imported += 1;
+    if (draft.channel === 'pinterest') summary.createdPinterest += 1;
+    else if (draft.channel === 'instagram') summary.createdInstagram += 1;
+    else if (draft.channel === 'facebook') summary.createdFacebook += 1;
   }
 
-  return { imported, skipped, rejected: 0, reasons, designTitle: cleanText(design.title) };
+  summary.designCount = summary.createdPinterest + summary.createdInstagram + summary.createdFacebook > 0 ? 1 : 0;
+  return summary;
 }
 
-export async function generateCampaignDraftsForAllReadyDesigns() {
+export async function generateCampaignDraftsForAllReadyDesigns(options: { limit?: number; batchTag?: string } = {}) {
   await ensureSocialCampaignsTable();
 
+  const limit = Number(options.limit || 0);
+  const batchTag = cleanText(options.batchTag);
   const designs = await sql`
     select *
     from design_library
@@ -343,20 +398,29 @@ export async function generateCampaignDraftsForAllReadyDesigns() {
     order by updated_at desc nulls last, created_at desc
   `;
 
-  let imported = 0;
-  let skipped = 0;
-  let rejected = 0;
-  const reasons: string[] = [];
+  const readyDesigns = (designs as DesignRecord[]).filter((row) => designIsReady(row));
+  const picked = limit > 0 ? readyDesigns.slice(0, limit) : readyDesigns;
+  const summary = emptySummary(batchTag);
 
-  for (const row of designs as DesignRecord[]) {
-    const result = await generateCampaignDraftsForDesignId(row.id);
-    imported += result.imported;
-    skipped += result.skipped;
-    rejected += result.rejected;
-    reasons.push(...result.reasons.slice(0, 2));
+  for (const row of picked) {
+    const result = await generateCampaignDraftsForDesignId(row.id, { batchTag });
+    mergeSummaries(summary, result);
   }
 
-  return { imported, skipped, rejected, reasons: reasons.slice(0, 5) };
+  summary.reasons = summary.reasons.slice(0, 8);
+  return summary;
+}
+
+export async function deleteTestCampaigns(batchTag = 'test-campaign') {
+  await ensureSocialCampaignsTable();
+  const tag = cleanText(batchTag, 'test-campaign');
+  const deleted = await sql`
+    delete from social_campaigns
+    where batch_tag = ${tag}
+    returning id
+  `;
+
+  return deleted.length;
 }
 
 export async function regenerateCampaignById(campaignId: string) {
@@ -374,7 +438,7 @@ export async function regenerateCampaignById(campaignId: string) {
   const design = await getDesignById(String(campaign.design_id));
   if (!design || !designIsReady(design)) return { updated: false, reason: 'Design is no longer ready for campaign generation.' };
 
-  const drafts = await buildCampaignDrafts(design);
+  const drafts = await buildCampaignDrafts(design, { batchTag: cleanText(campaign.batch_tag) });
   const match = drafts.find((draft) => draft.channel === campaign.channel && Number(draft.variant_index) === Number(campaign.variant_index || 0));
   if (!match) return { updated: false, reason: 'Could not rebuild this campaign.' };
 
@@ -389,6 +453,7 @@ export async function regenerateCampaignById(campaignId: string) {
         board_name = ${match.board_name || null},
         keywords = ${JSON.stringify(match.keywords)}::jsonb,
         carousel_ideas = ${JSON.stringify(match.carousel_ideas)}::jsonb,
+        batch_tag = ${match.batch_tag || ''},
         status = 'draft',
         scheduled_at = null,
         published_at = null,

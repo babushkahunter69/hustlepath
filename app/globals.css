@@ -2013,6 +2013,52 @@ p {
   font-weight: 800;
 }
 
+.campaign-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #efe6ff;
+  color: #6941c6;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.inline-notice {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #f0dcc2;
+  border-radius: 16px;
+  background: #fff6e8;
+  color: #6f5b45;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.campaign-select-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.campaign-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.campaign-select-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
 .campaign-preview-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);

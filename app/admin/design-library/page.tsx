@@ -437,8 +437,9 @@ async function designSocialDraftsAction(formData: FormData) {
   if (!designId) redirect('/admin/design-library');
 
   const result = await generateCampaignDraftsForDesignId(designId);
+  const created = result.createdPinterest + result.createdInstagram + result.createdFacebook;
   const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 3).join(' | ')}` : '';
-  flashRedirect(`Generated ${result.imported} social campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+  flashRedirect(`Generated ${created} social campaign drafts, skipped ${result.skipped}, failed ${result.failed}.${suffix}`);
 }
 
 async function generateAllSocialDraftsAction() {
@@ -447,8 +448,9 @@ async function generateAllSocialDraftsAction() {
   await ensureDesignLibraryTable();
 
   const result = await generateCampaignDraftsForAllReadyDesigns();
+  const created = result.createdPinterest + result.createdInstagram + result.createdFacebook;
   const suffix = result.reasons.length ? ` First notes: ${result.reasons.slice(0, 4).join(' | ')}` : '';
-  flashRedirect(`Generated ${result.imported} social campaign drafts, skipped ${result.skipped}, rejected ${result.rejected}.${suffix}`);
+  flashRedirect(`Generated ${created} social campaign drafts, skipped ${result.skipped}, failed ${result.failed}.${suffix}`);
 }
 
 function tagPills(tags: string[]) {
