@@ -89,6 +89,11 @@ function readRelatedProducts(value: unknown) {
   }
 }
 
+
+function readOutline(value: unknown) {
+  return readStringArray(value);
+}
+
 function formatChannel(value: unknown) {
   const channel = cleanText(value).toLowerCase();
   if (channel === 'pinterest') return 'Pinterest';
@@ -153,7 +158,7 @@ async function generateArticleFunnelIdeasAction() {
   'use server';
 
   const result = await generateArticleFunnelDrafts();
-  flashRedirect(generationMessage(result, 'Generated article funnel campaign drafts.'));
+  flashRedirect(generationMessage(result, 'Generated article funnel ideas.'));
 }
 
 async function generateTestCampaignsAction() {
@@ -334,7 +339,7 @@ export default async function SocialCampaignsPage({
             <div className="admin-topline">Social campaign workflow</div>
             <h1>Social campaign queue</h1>
             <p className="admin-muted">
-              Generate direct Redbubble product campaigns or article-funnel draft campaigns from your Design Library, then review everything in one queue.
+              Generate direct Redbubble product campaigns or broader article-funnel campaign ideas from your Design Library, then review everything in one queue.
             </p>
           </div>
           <Link href="/admin/design-library" className="secondary-link">Back to Design Library</Link>
@@ -363,16 +368,16 @@ export default async function SocialCampaignsPage({
 
         <section className="product-form admin-section">
           <h2>Generate campaigns</h2>
-          <p className="admin-muted">Direct Product campaigns link straight to Redbubble. Article Funnel campaigns create grouped draft article ideas that can later promote multiple products from HustlePathDaily.</p>
+          <p className="admin-muted">Direct Product: sends traffic straight to Redbubble. Article Funnel: sends traffic to a helpful article that includes product links.</p>
           <div className="campaign-action-grid">
             <form action={generateDirectProductCampaignsAction} className="campaign-inline-form">
               <button type="submit" className="primary-link">Generate Direct Product Campaigns</button>
-              <p className="admin-muted">Creates Pinterest, Instagram, and Facebook draft campaigns for all ready designs that do not already have matching direct-product entries.</p>
+              <p className="admin-muted">Creates Pinterest, Instagram, and Facebook draft campaigns for ready designs that do not already have matching direct-product entries.</p>
             </form>
 
             <form action={generateArticleFunnelIdeasAction} className="campaign-inline-form">
               <button type="submit" className="secondary-link">Generate Article Funnel Ideas</button>
-              <p className="admin-muted">Groups related designs by niche, product type, and mood, then creates article-funnel drafts that can later point to HustlePathDaily collection posts.</p>
+              <p className="admin-muted">Groups related designs into broader gift guides and roundup ideas, then creates article-funnel campaigns that can later point to HustlePathDaily collection posts.</p>
             </form>
           </div>
         </section>
@@ -475,6 +480,7 @@ export default async function SocialCampaignsPage({
                 const carouselIdeas = readStringArray(campaign.carousel_ideas);
                 const targetKeywords = readStringArray(campaign.target_keywords);
                 const pinterestTitleIdeas = readStringArray(campaign.pinterest_title_ideas);
+                const articleOutline = readOutline(campaign.article_outline);
                 const relatedProducts = readRelatedProducts(campaign.related_products);
                 const targetUrl = targetUrlFor(campaign);
                 const channel = cleanText(campaign.channel).toLowerCase();
@@ -591,6 +597,15 @@ export default async function SocialCampaignsPage({
                                 <summary>Pinterest angles</summary>
                                 <ul className="design-idea-list">
                                   {pinterestTitleIdeas.map((idea) => <li key={`${campaign.id}-idea-${idea}`}>{idea}</li>)}
+                                </ul>
+                              </details>
+                            )}
+
+                            {articleOutline.length > 0 && (
+                              <details className="design-article-box nested-box">
+                                <summary>Article outline</summary>
+                                <ul className="design-idea-list">
+                                  {articleOutline.map((step) => <li key={`${campaign.id}-outline-${step}`}>{step}</li>)}
                                 </ul>
                               </details>
                             )}

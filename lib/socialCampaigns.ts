@@ -54,6 +54,7 @@ type ArticleFunnelDraft = {
   product_group: string;
   target_keywords: string[];
   pinterest_title_ideas: string[];
+  article_outline: string[];
   related_products: ArticleFunnelProduct[];
   representative_design_id: string;
   representative_image_url: string;
@@ -260,54 +261,94 @@ function articleTargetUrl(slug: string) {
   return `/blog/${slug}`;
 }
 
-function buildArticleAngle(niche: string, productType: string, mood: string, tags: string[]) {
-  const tagHint = titleCase(tags.find((tag) => tag.toLowerCase() !== 'inkwanderstudio') || niche);
-
-  if (/season|holiday|summer|winter|fall|spring/i.test(tags.join(' '))) return `Seasonal ${titleCase(niche)} collection`;
-  if (/sticker/i.test(productType)) return `${titleCase(niche)} sticker roundup`;
-  if (/gift/i.test(tags.join(' ')) || /gift/i.test(mood)) return `${titleCase(niche)} gift guide`;
-  if (/coffee|cozy/i.test(`${niche} ${mood} ${tags.join(' ')}`)) return `Cozy ${titleCase(tagHint)} collection`;
-  if (/funny|sarcastic|humor/i.test(`${niche} ${mood} ${tags.join(' ')}`)) return `Funny ${titleCase(tagHint)} collection`;
-  return `${titleCase(niche)} ${titleCase(productType)} ideas`;
+function titleCountLabel(count: number) {
+  return count >= 5 ? String(count) : 'Best';
 }
 
-function buildArticleTitle(angle: string, niche: string, productType: string, mood: string, tags: string[]) {
-  const tagHint = titleCase(tags.find((tag) => tag.toLowerCase() !== 'inkwanderstudio') || niche);
-
-  if (/sticker roundup/i.test(angle)) return `${titleCase(niche)} Sticker Roundup: ${tagHint} Designs to Save`;
-  if (/gift guide/i.test(angle)) return `${titleCase(tagHint)} Gift Guide: ${titleCase(niche)} Picks from InkWanderStudio`;
-  if (/cozy/i.test(angle)) return `Cozy ${titleCase(tagHint)} Collection for ${titleCase(niche)} Fans`;
-  if (/funny/i.test(angle)) return `Funny ${titleCase(tagHint)} Collection: ${titleCase(niche)} Favorites`;
-  return `${titleCase(niche)} ${titleCase(productType)} Ideas to Feature from InkWanderStudio`;
+function cleanThemeToken(value: string) {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-function buildArticleIntro(title: string, products: ArticleFunnelProduct[], niche: string, mood: string) {
+function detectArticleTheme(niche: string, mood: string, tags: string[], titles: string[]) {
+  const bag = `${niche} ${mood} ${tags.join(' ')} ${titles.join(' ')}`.toLowerCase();
+
+  if (/frog|toad/.test(bag)) return { key: 'frog', label: 'Cute Frog Gifts', board: 'Cute Frog Finds', moodLine: 'cute frog humor and cozy chaos' };
+  if (/introvert|social battery|out of spoons|tired|exhausted/.test(bag)) return { key: 'introvert', label: 'Funny Gifts for Introverts', board: 'Introvert Gift Ideas', moodLine: 'introverts who are always out of energy' };
+  if (/coffee|espresso|caffeine/.test(bag)) return { key: 'coffee', label: 'Coffee Gifts for Tired Adults', board: 'Coffee Lover Gift Ideas', moodLine: 'people running on coffee and bad decisions' };
+  if (/sarcastic|snark|burnout|morally exhausted|adult life|adulting/.test(bag)) return { key: 'sarcastic', label: 'Sarcastic Gifts for Adults', board: 'Sarcastic Gift Ideas', moodLine: 'people with questionable life choices' };
+  if (/phone case|iphone case|samsung case/.test(bag)) return { key: 'phone-case', label: 'Funny Phone Cases', board: 'Funny Phone Case Ideas', moodLine: 'people who want their phone case to match their personality' };
+  if (/sticker/.test(bag)) return { key: 'stickers', label: 'Funny Sticker Designs', board: 'Funny Sticker Ideas', moodLine: 'adults who love small chaotic gifts' };
+  if (/gift|guide/.test(bag)) return { key: 'gift-guide', label: 'Funny Gift Ideas', board: 'Gift Guide Ideas', moodLine: 'gift shoppers who want something more fun than the usual picks' };
+
+  return { key: cleanThemeToken(tags[0] || niche || 'collection'), label: `${titleCase(niche)} Gift Ideas`, board: `${titleCase(niche)} Gift Ideas`, moodLine: `${niche.toLowerCase()} fans who want playful, giftable finds` };
+}
+
+function buildArticleAngle(theme: { label: string; moodLine: string }, productType: string) {
+  if (/phone case/i.test(productType)) return `Funny phone case roundup for ${theme.moodLine}`;
+  if (/sticker/i.test(productType)) return `Sticker roundup for ${theme.moodLine}`;
+  return `Gift-guide roundup for ${theme.moodLine}`;
+}
+
+function buildArticleTitle(theme: { key: string; label: string; moodLine: string }, niche: string, productType: string, count: number) {
+  const countLabel = titleCountLabel(count);
+
+  if (theme.key === 'introvert') return `${countLabel} Funny Gifts for Introverts Who Are Always Out of Energy`;
+  if (theme.key === 'frog') return `${countLabel} Cute Frog Gifts for People Who Love Cozy Chaos`;
+  if (theme.key === 'coffee') return `${countLabel} Coffee Gifts for Tired Adults Running on Caffeine`;
+  if (theme.key === 'sarcastic') {
+    if (/phone case/i.test(productType)) return `${countLabel} Sarcastic Phone Cases for People With Questionable Life Choices`;
+    return `${countLabel} Sarcastic Gifts for Adults With a Dark Sense of Humor`;
+  }
+  if (theme.key === 'phone-case') return `${countLabel} Funny Phone Cases That Show Off Your Personality`;
+  if (theme.key === 'stickers') return `${countLabel} Funny Sticker Designs Every Tired Adult Will Love`;
+  if (/millennial/i.test(niche)) return `${countLabel} Funny Gifts for Millennials Who Are Barely Holding It Together`;
+  if (/introvert/i.test(niche)) return `${countLabel} Funny Gifts for Introverts Who Want to Be Left Alone`;
+  if (/coffee/i.test(niche)) return `${countLabel} Coffee-Themed Gifts for People Running on Vibes`;
+  if (/sarcastic animals/i.test(niche)) return `${countLabel} Sarcastic Animal Gifts for People With Chaotic Energy`;
+
+  if (/phone case/i.test(productType)) return `${countLabel} ${titleCase(niche)} Phone Cases Worth Saving for Later`;
+  if (/sticker/i.test(productType)) return `${countLabel} ${titleCase(niche)} Sticker Picks for Your Next Gift Guide`;
+  return `${countLabel} ${titleCase(niche)} Gifts and Finds to Save for Later`;
+}
+
+function buildArticleIntro(title: string, products: ArticleFunnelProduct[], niche: string, mood: string, theme: { moodLine: string }) {
   const count = products.length;
   return compactText(
-    `${title} pulls together ${count} InkWanderStudio products for readers who love ${niche} with ${mood.toLowerCase()} energy. Use this draft article to spotlight the collection, then send Pinterest traffic to the post before readers click through to the matching Redbubble listings.`,
+    `${title} rounds up ${count} standout Redbubble finds for readers who love ${niche.toLowerCase()} and ${theme.moodLine}. Use this article to share a helpful collection first, then naturally guide readers toward the featured product links when they are ready to shop.`,
     320,
   );
 }
 
-function buildArticleKeywords(niche: string, productType: string, mood: string, tags: string[]) {
+function buildArticleKeywords(niche: string, productType: string, mood: string, tags: string[], theme: { key: string; label: string }) {
   return dedupe([
-    niche,
+    cleanText(theme.label).toLowerCase(),
+    niche.toLowerCase(),
     productType.toLowerCase(),
     mood.toLowerCase(),
     ...tags.filter((tag) => tag.toLowerCase() !== 'inkwanderstudio').slice(0, 6),
-    'inkwanderstudio roundup',
   ]).slice(0, 8);
 }
 
-function buildArticlePinterestIdeas(title: string, angle: string, productType: string, niche: string) {
+function buildArticlePinterestIdeas(title: string, theme: { label: string; moodLine: string }, niche: string) {
   const shortTitle = title.replace(/\s+/g, ' ').trim();
   return dedupe([
     shortTitle,
-    `${titleCase(niche)} ${titleCase(productType)} roundup`,
-    `${titleCase(niche)} gift ideas to save`,
-    `${angle} for Pinterest boards`,
-    `Save this InkWanderStudio ${productType.toLowerCase()} collection`,
+    `${theme.label} you will want to save`,
+    `${titleCase(niche)} gift guide for Pinterest`,
+    `Funny gift ideas for ${theme.moodLine}`,
+    `Save this roundup for your next gift board`,
   ]).slice(0, 5);
+}
+
+function buildArticleOutline(title: string, products: ArticleFunnelProduct[], theme: { label: string; moodLine: string }) {
+  const featured = products.slice(0, 5).map((product) => product.title);
+  return [
+    `Intro: explain why ${theme.label.toLowerCase()} work so well for ${theme.moodLine}.`,
+    `Section 1: lead with the strongest featured pick and why it fits the collection.`,
+    `Section 2: highlight ${featured.slice(0, 2).join(' and ')} as easy Redbubble gift ideas.`,
+    `Section 3: group the remaining picks by mood, product type, or gifting use case.`,
+    'Wrap-up: end with a save/share CTA and link readers to the featured Redbubble products.',
+  ];
 }
 
 function normalizeArticleFunnelProduct(design: DesignRecord): ArticleFunnelProduct {
@@ -324,21 +365,23 @@ function normalizeArticleFunnelProduct(design: DesignRecord): ArticleFunnelProdu
 }
 
 function buildArticleFunnelDraft(products: ArticleFunnelProduct[]): ArticleFunnelDraft | null {
-  const cleanProducts = products.filter((product) => product.id && product.image_url && product.redbubble_url);
-  if (cleanProducts.length < 2) return null;
+  const cleanProducts = products.filter((product) => product.id && product.image_url && product.redbubble_url).slice(0, 10);
+  if (cleanProducts.length < 3) return null;
 
   const niche = topValue(cleanProducts.map((product) => product.niche), 'relatable stickers');
   const productType = topValue(cleanProducts.map((product) => product.product_type), 'Design');
   const mood = topValue(cleanProducts.map((product) => product.mood), 'Giftable');
-  const tags = dedupe(cleanProducts.flatMap((product) => product.tags.map((tag) => cleanText(tag).toLowerCase())).filter(Boolean)).slice(0, 8);
-  const articleAngle = buildArticleAngle(niche, productType, mood, tags);
-  const articleTitle = buildArticleTitle(articleAngle, niche, productType, mood, tags);
+  const tags = dedupe(cleanProducts.flatMap((product) => product.tags.map((tag) => cleanText(tag).toLowerCase())).filter(Boolean)).slice(0, 10);
+  const theme = detectArticleTheme(niche, mood, tags, cleanProducts.map((product) => product.title));
+  const articleAngle = buildArticleAngle(theme, productType);
+  const articleTitle = buildArticleTitle(theme, niche, productType, cleanProducts.length);
   const articleSlug = slugify(articleTitle);
-  const productGroup = `${titleCase(niche)} · ${titleCase(productType)} · ${titleCase(mood)}`;
-  const articleGroupKey = slugify(`${niche}-${productType}-${mood}-${tags.slice(0, 3).join('-')}`);
-  const intro = buildArticleIntro(articleTitle, cleanProducts, niche, mood);
-  const targetKeywords = buildArticleKeywords(niche, productType, mood, tags);
-  const pinterestTitleIdeas = buildArticlePinterestIdeas(articleTitle, articleAngle, productType, niche);
+  const productGroup = `${theme.label} · ${titleCase(niche)} · ${cleanProducts.length} picks`;
+  const articleGroupKey = slugify(`${niche}-${theme.key}-${tags.slice(0, 3).join('-')}`);
+  const intro = buildArticleIntro(articleTitle, cleanProducts, niche, mood, theme);
+  const targetKeywords = buildArticleKeywords(niche, productType, mood, tags, theme);
+  const pinterestTitleIdeas = buildArticlePinterestIdeas(articleTitle, theme, niche);
+  const articleOutline = buildArticleOutline(articleTitle, cleanProducts, theme);
   const representative = cleanProducts[0];
 
   return {
@@ -350,6 +393,7 @@ function buildArticleFunnelDraft(products: ArticleFunnelProduct[]): ArticleFunne
     product_group: productGroup,
     target_keywords: targetKeywords,
     pinterest_title_ideas: pinterestTitleIdeas,
+    article_outline: articleOutline,
     related_products: cleanProducts,
     representative_design_id: representative.id,
     representative_image_url: representative.image_url,
@@ -366,7 +410,8 @@ function collectArticleFunnelDrafts(designs: DesignRecord[], limit = 0) {
 
   for (const design of designs.filter((item) => designIsReady(item))) {
     const product = normalizeArticleFunnelProduct(design);
-    const groupKey = slugify(`${product.niche}-${product.product_type}-${product.mood}`);
+    const theme = detectArticleTheme(product.niche, product.mood, product.tags, [product.title]);
+    const groupKey = slugify(`${product.niche}-${theme.key}`);
     const existing = groups.get(groupKey) || [];
     existing.push(product);
     groups.set(groupKey, existing);
@@ -408,6 +453,7 @@ export async function ensureSocialCampaignsTable() {
       product_group text,
       target_keywords jsonb default '[]'::jsonb,
       pinterest_title_ideas jsonb default '[]'::jsonb,
+      article_outline jsonb default '[]'::jsonb,
       related_products jsonb default '[]'::jsonb,
       status text default 'draft',
       scheduled_at timestamptz,
@@ -427,6 +473,7 @@ export async function ensureSocialCampaignsTable() {
   await sql`alter table social_campaigns add column if not exists product_group text`;
   await sql`alter table social_campaigns add column if not exists target_keywords jsonb default '[]'::jsonb`;
   await sql`alter table social_campaigns add column if not exists pinterest_title_ideas jsonb default '[]'::jsonb`;
+  await sql`alter table social_campaigns add column if not exists article_outline jsonb default '[]'::jsonb`;
   await sql`alter table social_campaigns add column if not exists related_products jsonb default '[]'::jsonb`;
   await sql`update social_campaigns set campaign_type = 'direct_product' where campaign_type is null or campaign_type = ''`;
 
@@ -485,6 +532,7 @@ function buildInstagramCampaign(design: DesignRecord, batchTag: string) {
     target_keywords: [] as string[],
     pinterest_title_ideas: [] as string[],
     related_products: [] as ArticleFunnelProduct[],
+    article_outline: [] as string[],
     status: 'draft' as const,
   };
 }
@@ -514,6 +562,7 @@ function buildFacebookCampaign(design: DesignRecord, batchTag: string) {
     target_keywords: [] as string[],
     pinterest_title_ideas: [] as string[],
     related_products: [] as ArticleFunnelProduct[],
+    article_outline: [] as string[],
     status: 'draft' as const,
   };
 }
@@ -546,6 +595,7 @@ async function buildDirectProductCampaignDrafts(design: DesignRecord, options: C
     target_keywords: [] as string[],
     pinterest_title_ideas: [] as string[],
     related_products: [] as ArticleFunnelProduct[],
+    article_outline: [] as string[],
     status: 'draft' as const,
   }));
 
@@ -571,12 +621,12 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       channel: 'pinterest' as const,
       variant_index: 0,
       title: cleanText(draft.pinterest_title_ideas[0] || draft.article_title),
-      caption: compactText(`${draft.article_intro} Read the draft article, then click through to the featured Redbubble products.`, 260),
+      caption: compactText(`${draft.article_intro} Read the full roundup, then tap through to shop the featured Redbubble picks that fit the collection.`, 260),
       hashtags: hashtags.slice(0, 5),
       image_url: draft.representative_image_url,
       generated_image_url: '',
       target_url: targetUrl,
-      board_name: `${titleCase(draft.niche)} Article Funnel`,
+      board_name: `${titleCase(draft.niche)} Gift Guide Ideas`,
       keywords: draft.target_keywords,
       carousel_ideas: [] as string[],
       batch_tag: batchTag,
@@ -589,6 +639,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       target_keywords: draft.target_keywords,
       pinterest_title_ideas: draft.pinterest_title_ideas,
       related_products: draft.related_products,
+      article_outline: draft.article_outline,
       status: 'draft' as const,
     },
     {
@@ -596,7 +647,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       channel: 'instagram' as const,
       variant_index: 0,
       title: `${draft.article_title} Instagram Draft`,
-      caption: compactText(`${draft.article_intro} Save this collection idea, then use the linked article draft to send readers to the featured Redbubble products. ${targetUrl}`, 260),
+      caption: compactText(`${draft.article_intro} Save this collection for later, then use the article to explore the featured Redbubble products in one place. ${targetUrl}`, 260),
       hashtags: hashtags.slice(0, 8),
       image_url: draft.representative_image_url,
       generated_image_url: '',
@@ -606,7 +657,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       carousel_ideas: [
         `Cover slide: ${draft.article_title}`,
         `Product slides: feature ${draft.related_products.slice(0, 3).map((product) => product.title).join(', ')}`,
-        'CTA slide: read the HustlePathDaily article draft and shop the linked Redbubble products',
+        'CTA slide: read the full article and shop the featured Redbubble products',
       ],
       batch_tag: batchTag,
       article_title: draft.article_title,
@@ -618,6 +669,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       target_keywords: draft.target_keywords,
       pinterest_title_ideas: draft.pinterest_title_ideas,
       related_products: draft.related_products,
+      article_outline: draft.article_outline,
       status: 'draft' as const,
     },
     {
@@ -625,7 +677,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       channel: 'facebook' as const,
       variant_index: 0,
       title: `${draft.article_title} Facebook Draft`,
-      caption: compactText(`${draft.article_title} is a draft collection article built around ${draft.product_group.toLowerCase()}. Use the article to feature the related Redbubble picks, then share it from HustlePathDaily. ${targetUrl}`, 220),
+      caption: compactText(`${draft.article_title} brings together ${draft.product_group.toLowerCase()} in one helpful guide. Share the article first, then let readers browse the featured Redbubble picks from there. ${targetUrl}`, 220),
       hashtags: hashtags.slice(0, 5),
       image_url: draft.representative_image_url,
       generated_image_url: '',
@@ -643,6 +695,7 @@ function buildArticleFunnelCampaignDrafts(draft: ArticleFunnelDraft, batchTag: s
       target_keywords: draft.target_keywords,
       pinterest_title_ideas: draft.pinterest_title_ideas,
       related_products: draft.related_products,
+      article_outline: draft.article_outline,
       status: 'draft' as const,
     },
   ];
@@ -712,6 +765,7 @@ export async function generateCampaignDraftsForDesignId(designId: string, option
         product_group,
         target_keywords,
         pinterest_title_ideas,
+        article_outline,
         related_products,
         status,
         created_at,
@@ -740,6 +794,7 @@ export async function generateCampaignDraftsForDesignId(designId: string, option
         ${draft.product_group || null},
         ${JSON.stringify(draft.target_keywords)}::jsonb,
         ${JSON.stringify(draft.pinterest_title_ideas)}::jsonb,
+        ${JSON.stringify(draft.article_outline)}::jsonb,
         ${JSON.stringify(draft.related_products)}::jsonb,
         ${draft.status},
         now(),
@@ -842,6 +897,7 @@ export async function generateArticleFunnelDrafts(options: { limit?: number; bat
           product_group,
           target_keywords,
           pinterest_title_ideas,
+          article_outline,
           related_products,
           status,
           created_at,
@@ -870,6 +926,7 @@ export async function generateArticleFunnelDrafts(options: { limit?: number; bat
           ${campaign.product_group || null},
           ${JSON.stringify(campaign.target_keywords)}::jsonb,
           ${JSON.stringify(campaign.pinterest_title_ideas)}::jsonb,
+          ${JSON.stringify(campaign.article_outline)}::jsonb,
           ${JSON.stringify(campaign.related_products)}::jsonb,
           ${campaign.status},
           now(),
@@ -961,6 +1018,7 @@ export async function regenerateCampaignById(campaignId: string) {
           product_group = ${match.product_group || null},
           target_keywords = ${JSON.stringify(match.target_keywords)}::jsonb,
           pinterest_title_ideas = ${JSON.stringify(match.pinterest_title_ideas)}::jsonb,
+          article_outline = ${JSON.stringify(match.article_outline)}::jsonb,
           related_products = ${JSON.stringify(match.related_products)}::jsonb,
           status = 'draft',
           scheduled_at = null,
@@ -1000,6 +1058,7 @@ export async function regenerateCampaignById(campaignId: string) {
         product_group = null,
         target_keywords = '[]'::jsonb,
         pinterest_title_ideas = '[]'::jsonb,
+        article_outline = '[]'::jsonb,
         related_products = '[]'::jsonb,
         status = 'draft',
         scheduled_at = null,
