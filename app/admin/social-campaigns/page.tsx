@@ -8,6 +8,7 @@ import {
   deleteCampaigns,
   deleteTestCampaigns,
   ensureSocialCampaignsTable,
+  generateArticleFunnelDrafts,
   generateCampaignDraftsForAllReadyDesigns,
   generateCampaignDraftsForDesignId,
   regenerateCampaignById,
@@ -25,6 +26,7 @@ type SearchParams = Promise<{
   channel?: string;
   status?: string;
   design_id?: string;
+  campaign_type?: string;
 }>;
 
 function flashRedirect(message: string) {
@@ -62,6 +64,31 @@ function readStringArray(value: unknown) {
   }
 }
 
+function readRelatedProducts(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => ({
+        id: cleanText((item as any)?.id),
+        title: cleanText((item as any)?.title),
+        image_url: cleanText((item as any)?.image_url),
+        redbubble_url: cleanText((item as any)?.redbubble_url),
+        niche: cleanText((item as any)?.niche),
+        product_type: cleanText((item as any)?.product_type),
+        mood: cleanText((item as any)?.mood),
+        tags: readStringArray((item as any)?.tags),
+      }))
+      .filter((item) => item.id || item.title);
+  }
+
+  if (!value) return [];
+
+  try {
+    return readRelatedProducts(JSON.parse(String(value)));
+  } catch {
+    return [];
+  }
+}
+
 function formatChannel(value: unknown) {
   const channel = cleanText(value).toLowerCase();
   if (channel === 'pinterest') return 'Pinterest';
@@ -79,17 +106,10 @@ function formatStatus(value: unknown) {
   return 'Draft';
 }
 
-function formatDateTime(value: unknown) {
-  if (!value) return '';
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return '';
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
+function formatCampaignType(value: unknown) {
+  const type = cleanText(value).toLowerCase();
+  if (type === 'article_funnel') return 'Article Funnel';
+  return 'Direct Product';
 }
 
 function targetUrlFor(campaign: any) {
@@ -105,8 +125,11 @@ function nicheFor(campaign: any) {
 }
 
 function generationMessage(result: any, label: string) {
-  const reasons = result.reasons?.length ? ` Failed ${result.failed} with reasons: ${result.reasons.slice(0, 4).join(' | ')}` : ` Failed ${result.failed}.`;
-  return `${label} Created ${result.createdPinterest} Pinterest drafts, ${result.createdInstagram} Instagram drafts, and ${result.createdFacebook} Facebook drafts. Skipped ${result.skipped} duplicates.${reasons}`;
+  const reasons = result.reasons?.length
+    ? ` Failed ${result.failed} with reasons: ${result.reasons.slice(0, 4).join(' | ')}`
+    : ` Failed ${result.failed}.`;
+  const funnelLine = result.createdFunnels ? ` Created ${result.createdFunnels} article funnel idea sets.` : '';
+  return `${label} Created ${result.createdPinterest} Pinterest drafts, ${result.createdInstagram} Instagram drafts, and ${result.createdFacebook} Facebook drafts.${funnelLine} Skipped ${result.skipped} duplicates.${reasons}`;
 }
 
 async function generateOneDesignCampaignAction(formData: FormData) {
@@ -116,7 +139,21 @@ async function generateOneDesignCampaignAction(formData: FormData) {
   if (!designId) flashRedirect('Pick a ready design first.');
 
   const result = await generateCampaignDraftsForDesignId(designId);
-  flashRedirect(generationMessage(result, 'Generated selected design campaigns.'));
+  flashRedirect(generationMessage(result, 'Generated selected direct product campaigns.'));
+}
+
+async function generateDirectProductCampaignsAction() {
+  'use server';
+
+  const result = await generateCampaignDraftsForAllReadyDesigns();
+  flashRedirect(generationMessage(result, 'Generated direct product campaigns for all ready designs.'));
+}
+
+async function generateArticleFunnelIdeasAction() {
+  'use server';
+
+  const result = await generateArticleFunnelDrafts();
+  flashRedirect(generationMessage(result, 'Generated article funnel campaign drafts.'));
 }
 
 async function generateTestCampaignsAction() {
@@ -236,6 +273,7 @@ export default async function SocialCampaignsPage({
   const selectedChannel = cleanText(params.channel).toLowerCase();
   const selectedStatus = cleanText(params.status).toLowerCase();
   const selectedDesignId = cleanText(params.design_id);
+  const selectedCampaignType = cleanText(params.campaign_type).toLowerCase();
 
   const readyDesigns = designs.filter((design) => cleanText(design.image_url) && cleanText(design.redbubble_url || design.product_url));
   const missingImageCount = designs.filter((design) => !cleanText(design.image_url)).length;
@@ -245,19 +283,30 @@ export default async function SocialCampaignsPage({
   const filteredCampaigns = campaigns.filter((campaign) => {
     const channel = cleanText(campaign.channel).toLowerCase();
     const status = cleanText(campaign.status || 'draft').toLowerCase();
+    const campaignType = cleanText(campaign.campaign_type || 'direct_product').toLowerCase();
+    const relatedProducts = readRelatedProducts(campaign.related_products);
     const haystack = [
       campaign.title,
       campaign.caption,
       campaign.design_title,
       campaign.board_name,
+      campaign.article_title,
+      campaign.article_intro,
+      campaign.article_angle,
+      campaign.product_group,
       ...readStringArray(campaign.hashtags),
       ...readStringArray(campaign.keywords),
+      ...readStringArray(campaign.target_keywords),
+      ...readStringArray(campaign.pinterest_title_ideas),
+      ...relatedProducts.map((product) => product.title),
       campaign.batch_tag,
+      campaign.campaign_type,
     ].join(' ').toLowerCase();
 
     if (selectedChannel && channel !== selectedChannel) return false;
     if (selectedStatus && status !== selectedStatus) return false;
-    if (selectedDesignId && cleanText(campaign.design_id) != selectedDesignId) return false;
+    if (selectedCampaignType && campaignType !== selectedCampaignType) return false;
+    if (selectedDesignId && cleanText(campaign.design_id) !== selectedDesignId) return false;
     if (query && !haystack.includes(query)) return false;
     return true;
   });
@@ -270,8 +319,12 @@ export default async function SocialCampaignsPage({
     else if (status === 'published') acc.published += 1;
     else if (status === 'failed') acc.failed += 1;
     else acc.draft += 1;
+
+    const campaignType = cleanText(campaign.campaign_type || 'direct_product').toLowerCase();
+    if (campaignType === 'article_funnel') acc.articleFunnel += 1;
+    else acc.directProduct += 1;
     return acc;
-  }, { total: 0, draft: 0, ready: 0, scheduled: 0, published: 0, failed: 0 });
+  }, { total: 0, draft: 0, ready: 0, scheduled: 0, published: 0, failed: 0, directProduct: 0, articleFunnel: 0 });
 
   return (
     <main className="admin-shell">
@@ -281,7 +334,7 @@ export default async function SocialCampaignsPage({
             <div className="admin-topline">Social campaign workflow</div>
             <h1>Social campaign queue</h1>
             <p className="admin-muted">
-              Test Pinterest, Instagram, and Facebook drafts on a small safe batch first, then move them through one simple queue.
+              Generate direct Redbubble product campaigns or article-funnel draft campaigns from your Design Library, then review everything in one queue.
             </p>
           </div>
           <Link href="/admin/design-library" className="secondary-link">Back to Design Library</Link>
@@ -300,6 +353,29 @@ export default async function SocialCampaignsPage({
           <div className="stat-card"><span>{summary.published}</span><p>Published</p></div>
           <div className="stat-card"><span>{summary.failed}</span><p>Failed</p></div>
         </div>
+
+        <div className="stat-grid campaign-summary-grid compact-grid">
+          <div className="stat-card"><span>{summary.directProduct}</span><p>Direct product</p></div>
+          <div className="stat-card"><span>{summary.articleFunnel}</span><p>Article funnel</p></div>
+          <div className="stat-card"><span>{readyDesigns.length}</span><p>Ready designs</p></div>
+          <div className="stat-card"><span>{testCampaignCount}</span><p>Test campaigns</p></div>
+        </div>
+
+        <section className="product-form admin-section">
+          <h2>Generate campaigns</h2>
+          <p className="admin-muted">Direct Product campaigns link straight to Redbubble. Article Funnel campaigns create grouped draft article ideas that can later promote multiple products from HustlePathDaily.</p>
+          <div className="campaign-action-grid">
+            <form action={generateDirectProductCampaignsAction} className="campaign-inline-form">
+              <button type="submit" className="primary-link">Generate Direct Product Campaigns</button>
+              <p className="admin-muted">Creates Pinterest, Instagram, and Facebook draft campaigns for all ready designs that do not already have matching direct-product entries.</p>
+            </form>
+
+            <form action={generateArticleFunnelIdeasAction} className="campaign-inline-form">
+              <button type="submit" className="secondary-link">Generate Article Funnel Ideas</button>
+              <p className="admin-muted">Groups related designs by niche, product type, and mood, then creates article-funnel drafts that can later point to HustlePathDaily collection posts.</p>
+            </form>
+          </div>
+        </section>
 
         <section className="product-form admin-section">
           <h2>Safe test mode</h2>
@@ -344,7 +420,7 @@ export default async function SocialCampaignsPage({
           <div className="design-filter-grid">
             <label className="field">
               <span>Search</span>
-              <input name="q" defaultValue={params.q || ''} placeholder="title, caption, hashtag, board" />
+              <input name="q" defaultValue={params.q || ''} placeholder="title, caption, hashtag, board, article" />
             </label>
             <label className="field">
               <span>Channel</span>
@@ -365,6 +441,14 @@ export default async function SocialCampaignsPage({
               </select>
             </label>
             <label className="field">
+              <span>Campaign type</span>
+              <select name="campaign_type" defaultValue={params.campaign_type || ''}>
+                <option value="">All campaign types</option>
+                <option value="direct_product">Direct Product</option>
+                <option value="article_funnel">Article Funnel</option>
+              </select>
+            </label>
+            <label className="field">
               <span>Design</span>
               <select name="design_id" defaultValue={params.design_id || ''}>
                 <option value="">All designs</option>
@@ -381,7 +465,7 @@ export default async function SocialCampaignsPage({
         </form>
 
         {filteredCampaigns.length === 0 ? (
-          <div className="empty-state">No campaigns match the current filters yet. Start with the 3-design test batch or generate one selected design.</div>
+          <div className="empty-state">No campaigns match the current filters yet. Start with the 3-design test batch, generate one selected design, or create article-funnel ideas.</div>
         ) : (
           <>
             <div className="pin-workflow-list">
@@ -389,9 +473,18 @@ export default async function SocialCampaignsPage({
                 const hashtags = readStringArray(campaign.hashtags);
                 const keywords = readStringArray(campaign.keywords);
                 const carouselIdeas = readStringArray(campaign.carousel_ideas);
+                const targetKeywords = readStringArray(campaign.target_keywords);
+                const pinterestTitleIdeas = readStringArray(campaign.pinterest_title_ideas);
+                const relatedProducts = readRelatedProducts(campaign.related_products);
                 const targetUrl = targetUrlFor(campaign);
                 const channel = cleanText(campaign.channel).toLowerCase();
                 const batchTag = cleanText(campaign.batch_tag);
+                const campaignType = cleanText(campaign.campaign_type || 'direct_product').toLowerCase();
+                const articleSlug = cleanText(campaign.article_slug);
+                const articleIntro = cleanText(campaign.article_intro);
+                const articleAngle = cleanText(campaign.article_angle);
+                const productGroup = cleanText(campaign.product_group);
+                const articleTitle = cleanText(campaign.article_title || campaign.title);
 
                 return (
                   <article key={campaign.id} className="pin-workflow-post campaign-card">
@@ -400,6 +493,7 @@ export default async function SocialCampaignsPage({
                         <div className="campaign-meta-row">
                           <span className={`campaign-badge channel-${channel}`}>{formatChannel(campaign.channel)}</span>
                           <span className={`campaign-status status-${cleanText(campaign.status || 'draft').toLowerCase()}`}>{formatStatus(campaign.status)}</span>
+                          <span className="campaign-flag">{formatCampaignType(campaignType)}</span>
                           {batchTag && <span className="campaign-flag">{batchTag}</span>}
                           <span className="campaign-meta-text">{campaign.design_title}</span>
                         </div>
@@ -445,14 +539,14 @@ export default async function SocialCampaignsPage({
                         {channel === 'instagram' && (
                           <>
                             <p><strong>Caption:</strong> {compactText(campaign.caption, 240)}</p>
-                            <p><strong>Redbubble URL:</strong> {targetUrl || 'Missing target URL'}</p>
+                            <p><strong>Target URL:</strong> {targetUrl || 'Missing target URL'}</p>
                           </>
                         )}
 
                         {channel === 'facebook' && (
                           <>
                             <p><strong>Post text:</strong> {compactText(campaign.caption, 240)}</p>
-                            <p><strong>Redbubble URL:</strong> {targetUrl || 'Missing target URL'}</p>
+                            <p><strong>Target URL:</strong> {targetUrl || 'Missing target URL'}</p>
                           </>
                         )}
 
@@ -474,6 +568,47 @@ export default async function SocialCampaignsPage({
                               {carouselIdeas.map((idea) => <li key={`${campaign.id}-${idea}`}>{idea}</li>)}
                             </ul>
                           </details>
+                        )}
+
+                        {campaignType === 'article_funnel' && (
+                          <section className="design-article-box campaign-funnel-preview">
+                            <h3>Article funnel preview</h3>
+                            <p><strong>Proposed article title:</strong> {articleTitle}</p>
+                            <p><strong>Slug suggestion:</strong> {articleSlug || 'Draft slug not saved yet'}</p>
+                            <p><strong>Article angle:</strong> {articleAngle || 'Collection article draft'}</p>
+                            <p><strong>Product group:</strong> {productGroup || 'Grouped designs'}</p>
+                            <p><strong>Intro:</strong> {compactText(articleIntro, 280)}</p>
+
+                            {targetKeywords.length > 0 && (
+                              <div>
+                                <strong>Target keywords</strong>
+                                <div className="design-tag-row">{targetKeywords.map((keyword) => <span key={`${campaign.id}-keyword-${keyword}`} className="design-tag-pill">{keyword}</span>)}</div>
+                              </div>
+                            )}
+
+                            {pinterestTitleIdeas.length > 0 && (
+                              <details className="design-article-box nested-box">
+                                <summary>Pinterest angles</summary>
+                                <ul className="design-idea-list">
+                                  {pinterestTitleIdeas.map((idea) => <li key={`${campaign.id}-idea-${idea}`}>{idea}</li>)}
+                                </ul>
+                              </details>
+                            )}
+
+                            {relatedProducts.length > 0 && (
+                              <details className="design-article-box nested-box">
+                                <summary>Related Redbubble products included ({relatedProducts.length})</summary>
+                                <ul className="design-idea-list">
+                                  {relatedProducts.map((product) => (
+                                    <li key={`${campaign.id}-product-${product.id || product.title}`}>
+                                      <strong>{product.title}</strong>
+                                      <span> · {product.product_type || 'Product'} · {product.niche || 'InkWanderStudio'}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </section>
                         )}
                       </div>
                     </div>
@@ -502,7 +637,7 @@ export default async function SocialCampaignsPage({
                     <input data-campaign-checkbox="true" type="checkbox" name="campaign_id" value={campaign.id} />
                     <span>
                       <strong>{campaign.title}</strong>
-                      <small>{formatChannel(campaign.channel)} · {formatStatus(campaign.status)} · {campaign.design_title}</small>
+                      <small>{formatChannel(campaign.channel)} · {formatStatus(campaign.status)} · {formatCampaignType(campaign.campaign_type)} · {campaign.design_title}</small>
                     </span>
                   </label>
                 ))}
