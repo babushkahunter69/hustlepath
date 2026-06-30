@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { redirect } from 'next/navigation';
+import AdminNav from './AdminNav';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -51,77 +52,44 @@ export default async function Admin() {
         <div className="admin-row">
           <div>
             <div className="admin-topline">Admin Dashboard</div>
-            <h1>Editorial command center</h1>
+            <h1>HustlePathDaily workflow</h1>
             <p className="admin-muted">
-              Generate drafts, review SEO, approve posts, and publish HustlePathDaily articles.
+              Manage articles, design imports, Pinterest assets, and social-ready campaigns from one cleaner admin flow.
             </p>
           </div>
 
           <div className="admin-actions compact">
             <form action="/api/admin/logout" method="POST">
-              <button className="secondary-link" type="submit">
-                Logout
-              </button>
+              <button className="secondary-link" type="submit">Logout</button>
             </form>
 
             <form action="/api/admin/format-existing" method="POST">
-              <button className="secondary-link" type="submit">
-                Format existing posts
-              </button>
+              <button className="secondary-link" type="submit">Format existing posts</button>
             </form>
 
             <form action={generateDraftAction}>
-              <button className="primary-link" type="submit">
-                Generate draft now
-              </button>
+              <button className="primary-link" type="submit">Generate draft now</button>
             </form>
           </div>
         </div>
+
+        <AdminNav current="dashboard" />
 
         {error && <div className="notice">Database not ready: {error}</div>}
 
         <div className="stat-grid four">
-          <div className="stat-card">
-            <span>{stats.drafts}</span>
-            <p>Drafts</p>
-          </div>
-
-          <div className="stat-card">
-            <span>{stats.review}</span>
-            <p>Needs review</p>
-          </div>
-
-          <div className="stat-card">
-            <span>{stats.approved}</span>
-            <p>Approved</p>
-          </div>
-
-          <div className="stat-card">
-            <span>{stats.published}</span>
-            <p>Published</p>
-          </div>
+          <div className="stat-card"><span>{stats.drafts}</span><p>Drafts</p></div>
+          <div className="stat-card"><span>{stats.review}</span><p>Needs review</p></div>
+          <div className="stat-card"><span>{stats.approved}</span><p>Approved</p></div>
+          <div className="stat-card"><span>{stats.published}</span><p>Published</p></div>
         </div>
 
         <div className="admin-actions">
-          <Link href="/admin/drafts" className="primary-link">
-            Open draft queue
-          </Link>
-
-          <Link href="/admin/published" className="secondary-link">
-            View published posts
-          </Link>
-
-          <Link href="/admin/pins" className="secondary-link">
-            Pinterest pins
-          </Link>
-
-          <Link href="/admin/products" className="secondary-link">
-            Product library
-          </Link>
-
-          <Link href="/blog" className="secondary-link">
-            View public blog
-          </Link>
+          <Link href="/admin/articles" className="primary-link">Open article workflow</Link>
+          <Link href="/admin/design-library" className="secondary-link">Open design library</Link>
+          <Link href="/admin/pins" className="secondary-link">View Pinterest drafts</Link>
+          <Link href="/admin/social-campaigns" className="secondary-link">View social campaigns</Link>
+          <Link href="/blog" className="secondary-link">View public blog</Link>
         </div>
 
         <div className="admin-section">
@@ -129,23 +97,15 @@ export default async function Admin() {
 
           <div className="draft-list">
             {!error && recent.length === 0 && (
-              <div className="empty-state">
-                No drafts yet. Generate one to start the editorial flow.
-              </div>
+              <div className="empty-state">No drafts yet. Generate one to start the editorial flow.</div>
             )}
 
             {recent.map((post) => (
-              <Link
-                key={post.id}
-                href={`/admin/drafts/${post.id}`}
-                className="draft-item"
-              >
+              <Link key={post.id} href={`/admin/drafts/${post.id}`} className="draft-item">
                 <div>
                   <h2>{post.title || 'Untitled draft'}</h2>
                   <p>
-                    {post.category || 'Guide'} · SEO{' '}
-                    {post.quality_score ?? 'not scored'} ·{' '}
-                    {post.status || 'draft'}
+                    {post.category || 'Guide'} · SEO {post.quality_score ?? 'not scored'} · {post.status || 'draft'}
                   </p>
                 </div>
 
