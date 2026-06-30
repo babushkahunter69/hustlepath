@@ -136,6 +136,137 @@ function markdownToHtml(markdown: string, validSlugs: Set<string>) {
     .join('\n');
 }
 
+
+function stripMarkdown(value: string) {
+  return String(value || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_`\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractFaqItems(markdown: string) {
+  const faqStart = String(markdown || '').search(/^##\s+(Frequently Asked Questions|FAQ|FAQs)\b/im);
+  if (faqStart < 0) return [];
+
+  const faqBlock = String(markdown || '').slice(faqStart);
+  const nextSection = faqBlock.slice(1).search(/^##\s+/im);
+  const scoped = nextSection > 0 ? faqBlock.slice(0, nextSection + 1) : faqBlock;
+  const matches = [...scoped.matchAll(/^###\s+(.+?)\s*\n+([\s\S]*?)(?=^###\s+|^##\s+|$)/gim)];
+
+  return matches
+    .map((match) => ({
+      question: stripMarkdown(match[1]),
+      answer: stripMarkdown(match[2]),
+    }))
+    .filter((item) => item.question && item.answer)
+    .slice(0, 6);
+}
+
+function inferLearningResourceType(title: string, category: string, body: string) {
+  const text = `${title} ${category} ${body}`.toLowerCase();
+  if (/checklist|steps|plan|template|workflow/.test(text)) return 'How-to guide';
+  if (/tool|app|software|platform|canva|pinterest|redbubble|etsy|gumroad|fiverr|upwork/.test(text)) return 'Tool guide';
+  if (/side hustle|freelance|online income|make money|first \$?100|client/.test(text)) return 'Beginner entrepreneurship guide';
+  return 'Beginner guide';
+}
+
+function buildArticleSchema(post: any, faqItems: { question: string; answer: string }[]) {
+  const slug = String(post.slug || '');
+  const url = `https://hustlepathdaily.com/blog/${slug}`;
+  const title = String(post.seo_title || post.title || 'Hustle Path Daily Guide');
+  const description = String(post.seo_description || post.excerpt || 'Beginner-friendly online income and side hustle guide.');
+  const published = post.published_at || post.created_at || new Date().toISOString();
+  const modified = post.updated_at || published;
+  const body = String(post.body || '');
+  const keywords = [post.primary_keyword, ...(Array.isArray(post.related_keywords) ? post.related_keywords : [])]
+    .filter(Boolean)
+    .map(String);
+
+  const graph: any[] = [
+    {
+      '@type': 'Organization',
+      '@id': 'https://hustlepathdaily.com/#organization',
+      name: 'Hustle Path Daily',
+      url: 'https://hustlepathdaily.com',
+    },
+    {
+      '@type': 'WebSite',
+      '@id': 'https://hustlepathdaily.com/#website',
+      name: 'Hustle Path Daily',
+      url: 'https://hustlepathdaily.com',
+      publisher: { '@id': 'https://hustlepathdaily.com/#organization' },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: 'https://hustlepathdaily.com/blog?query={search_term_string}',
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@type': 'Person',
+      '@id': 'https://hustlepathdaily.com/#author',
+      name: 'Hustle Path Daily Editorial Team',
+      url: 'https://hustlepathdaily.com',
+    },
+    {
+      '@type': 'BreadcrumbList',
+      '@id': `${url}#breadcrumb`,
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://hustlepathdaily.com' },
+        { '@type': 'ListItem', position: 2, name: 'Blog', item: 'https://hustlepathdaily.com/blog' },
+        { '@type': 'ListItem', position: 3, name: String(post.title || title), item: url },
+      ],
+    },
+    {
+      '@type': 'Article',
+      '@id': `${url}#article`,
+      headline: String(post.title || title),
+      description,
+      datePublished: new Date(published).toISOString(),
+      dateModified: new Date(modified).toISOString(),
+      mainEntityOfPage: url,
+      author: { '@id': 'https://hustlepathdaily.com/#author' },
+      publisher: { '@id': 'https://hustlepathdaily.com/#organization' },
+      articleSection: String(post.category || 'Beginner Guide'),
+      keywords,
+    },
+    {
+      '@type': 'LearningResource',
+      '@id': `${url}#learning-resource`,
+      name: String(post.title || title),
+      description,
+      url,
+      learningResourceType: inferLearningResourceType(String(post.title || ''), String(post.category || ''), body),
+      educationalLevel: 'Beginner',
+      teaches: keywords.length ? keywords : [String(post.category || 'online income basics')],
+      audience: {
+        '@type': 'EducationalAudience',
+        educationalRole: 'beginner online income learner',
+      },
+      isAccessibleForFree: true,
+    },
+  ];
+
+  if (faqItems.length) {
+    graph.push({
+      '@type': 'FAQPage',
+      '@id': `${url}#faq`,
+      mainEntity: faqItems.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: item.answer,
+        },
+      })),
+    });
+  }
+
+  return { '@context': 'https://schema.org', '@graph': graph };
+}
+
 export default async function BlogPostPage({
   params,
 }: {
@@ -144,7 +275,7 @@ export default async function BlogPostPage({
   const { slug } = await params;
 
   const rows = await sql`
-    select id, title, slug, excerpt, body, category, published_at, created_at, primary_keyword, related_keywords
+    select id, title, slug, excerpt, body, category, published_at, created_at, updated_at, seo_title, seo_description, primary_keyword, related_keywords
     from posts
     where slug = ${slug}
       and status = 'published'
@@ -217,9 +348,17 @@ export default async function BlogPostPage({
     ? new Date(publishedDate).toISOString().slice(0, 10)
     : '';
 
+  const faqItems = extractFaqItems(String(post.body || ''));
+  const articleSchema = buildArticleSchema(post, faqItems);
+
   return (
     <main className="page-shell">
       <article className="article-shell">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
+        />
+
         <p className="eyebrow">{post.category || 'Guide'}</p>
 
         <h1 className="article-title">{post.title}</h1>
