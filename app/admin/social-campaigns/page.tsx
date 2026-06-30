@@ -4,6 +4,7 @@ import { sql } from '@/lib/db';
 import DesignPinPreviewImage from '../design-library/DesignPinPreviewImage';
 import AdminNav from '../AdminNav';
 import CampaignBulkToggle from './CampaignBulkToggle';
+import CampaignCopyButton from './CampaignCopyButton';
 import {
   deleteCampaigns,
   deleteTestCampaigns,
@@ -198,6 +199,14 @@ async function updateSingleCampaignAction(formData: FormData) {
     flashRedirect('Deleted 1 campaign.');
   }
 
+  if (intent === 'schedule') {
+    const scheduledAt = cleanText(formData.get('scheduled_at'));
+    if (!scheduledAt) flashRedirect('Pick a schedule date and time first.');
+
+    await updateCampaignStatus([campaignId], 'scheduled', scheduledAt);
+    flashRedirect('Scheduled 1 campaign.');
+  }
+
   const statusMap: Record<string, 'draft' | 'ready' | 'published'> = {
     draft: 'draft',
     ready: 'ready',
@@ -224,8 +233,9 @@ async function bulkCampaignAction(formData: FormData) {
     flashRedirect(`Deleted ${deleted} campaigns.`);
   }
 
-  const statusMap: Record<string, 'ready'> = {
+  const statusMap: Record<string, 'ready' | 'published'> = {
     ready: 'ready',
+    published: 'published',
   };
 
   const nextStatus = statusMap[intent];
@@ -309,7 +319,11 @@ export default async function SocialCampaignsPage({
     ].join(' ').toLowerCase();
 
     if (selectedChannel && channel !== selectedChannel) return false;
-    if (selectedStatus && status !== selectedStatus) return false;
+    if (selectedStatus === 'ready_to_post') {
+      if (status !== 'ready') return false;
+    } else if (selectedStatus && status !== selectedStatus) {
+      return false;
+    }
     if (selectedCampaignType && campaignType !== selectedCampaignType) return false;
     if (selectedDesignId && cleanText(campaign.design_id) !== selectedDesignId) return false;
     if (query && !haystack.includes(query)) return false;
@@ -440,9 +454,12 @@ export default async function SocialCampaignsPage({
               <span>Status</span>
               <select name="status" defaultValue={params.status || ''}>
                 <option value="">All statuses</option>
+                <option value="ready_to_post">Ready to Post</option>
                 <option value="draft">Draft</option>
                 <option value="ready">Ready</option>
+                <option value="scheduled">Scheduled</option>
                 <option value="published">Published</option>
+                <option value="failed">Failed</option>
               </select>
             </label>
             <label className="field">
@@ -491,6 +508,13 @@ export default async function SocialCampaignsPage({
                 const articleAngle = cleanText(campaign.article_angle);
                 const productGroup = cleanText(campaign.product_group);
                 const articleTitle = cleanText(campaign.article_title || campaign.title);
+                const imageUrl = cleanText(campaign.generated_image_url || campaign.image_url || campaign.design_image_url);
+                const hashtagsText = hashtags.join(' ');
+                const scheduleValue = campaign.scheduled_at
+                  ? new Date(new Date(campaign.scheduled_at).getTime() - new Date(campaign.scheduled_at).getTimezoneOffset() * 60000)
+                      .toISOString()
+                      .slice(0, 16)
+                  : '';
 
                 return (
                   <article key={campaign.id} className="pin-workflow-post campaign-card">
@@ -507,7 +531,9 @@ export default async function SocialCampaignsPage({
                         <p className="admin-muted">{nicheFor(campaign)} · {productTypeFor(campaign)}</p>
                       </div>
                       <div className="pin-workflow-actions">
-                        {targetUrl && <Link href={targetUrl} target="_blank" className="secondary-link small">Open link</Link>}
+                        {targetUrl && <Link href={targetUrl} target="_blank" className="secondary-link small">Open target URL</Link>}
+                        {imageUrl && <Link href={imageUrl} target="_blank" className="secondary-link small">Open image</Link>}
+                        {imageUrl && <a href={imageUrl} download className="secondary-link small">Download image</a>}
                         <Link href="/admin/design-library" className="secondary-link small">View design</Link>
                       </div>
                     </div>
@@ -630,9 +656,18 @@ export default async function SocialCampaignsPage({
 
                     <form action={updateSingleCampaignAction} className="campaign-controls">
                       <input type="hidden" name="campaign_id" value={campaign.id} />
+                      <div className="pin-workflow-actions campaign-copy-actions">
+                        <CampaignCopyButton label="Copy caption" value={cleanText(campaign.caption)} />
+                        <CampaignCopyButton label="Copy hashtags" value={hashtagsText} />
+                      </div>
+                      <label className="field compact-field campaign-schedule-field">
+                        <span>Schedule date and time</span>
+                        <input type="datetime-local" name="scheduled_at" defaultValue={scheduleValue} />
+                      </label>
                       <div className="pin-workflow-actions">
                         <button type="submit" formAction={regenerateSingleCampaignAction} className="secondary-link small">Regenerate</button>
                         <button type="submit" name="intent" value="ready" className="secondary-link small">Mark Ready</button>
+                        <button type="submit" name="intent" value="schedule" className="secondary-link small">Schedule</button>
                         <button type="submit" name="intent" value="published" className="secondary-link small">Mark Published</button>
                         <button type="submit" name="intent" value="delete" className="secondary-link small">Delete</button>
                       </div>
@@ -660,6 +695,8 @@ export default async function SocialCampaignsPage({
               <div className="campaign-bulk-actions">
                 <div className="pin-workflow-actions">
                   <button type="submit" name="intent" value="ready" className="secondary-link">Mark Ready</button>
+                  <button type="submit" name="intent" value="published" className="secondary-link">Mark Published</button>
+                  <button type="submit" formAction="/admin/social-campaigns/export" formMethod="get" className="secondary-link">Export selected campaigns CSV</button>
                   <button type="submit" name="intent" value="delete" className="primary-link">Delete selected</button>
                 </div>
               </div>
