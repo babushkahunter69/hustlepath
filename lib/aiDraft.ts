@@ -452,7 +452,7 @@ async function generateArticleJson(
 
 Your job is to create a publish-ready article on the FIRST draft.
 
-The article must be practical, beginner-friendly, specific, and structured well enough to score 85+ without needing a separate polish pass.
+The article must be practical, beginner-friendly, specific to online income or side hustles, and structured well enough to score 85+ without needing a separate polish pass. Avoid income guarantees and treat every money-making idea as an educational experiment, not a promise.
 
 Return JSON only. No markdown outside the JSON.`,
       },
@@ -476,12 +476,16 @@ CONTENT REQUIREMENTS:
 - Beginner-friendly but not shallow
 - No fake income promises
 - No hype
+- No claims that a beginner will definitely earn money
 - No generic filler
 - Make the angle specific to the requested topic, not a repeated generic freelance article
 - Short paragraphs
 - Clear steps
 - Practical examples
 - Actionable advice
+- A ## Quick Answer section near the top
+- A ## Beginner Action Plan section
+- A ## Reality Check section that clearly says results are not guaranteed
 
 SEO REQUIREMENTS:
 - Title must be 40 to 68 characters
@@ -496,6 +500,7 @@ SEO REQUIREMENTS:
 - Include at least 2 H3 sections
 - Include at least 3 bullet lists
 - Include a FAQ section with 4 questions
+- Include one grounded cost, time, or risk note when relevant
 - Include a conclusion section
 - Include one exact blockquote starting with: > **Pro tip:**
 - Include one exact blockquote starting with: > **Quick win:**
@@ -601,6 +606,9 @@ You must ensure:
 - at least 3 bullet lists
 - FAQ section with 4 questions
 - conclusion section
+- Quick Answer section
+- Beginner Action Plan section
+- Reality Check section
 - one > **Pro tip:** callout
 - one > **Quick win:** callout
 

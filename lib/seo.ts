@@ -86,6 +86,21 @@ export function scorePost(input: {
       detail: `${bulletCount} bullet points. Aim for at least 8.`,
     },
     {
+      label: 'Quick answer',
+      passed: /## .*quick answer/i.test(body),
+      detail: 'Add a direct Quick Answer section near the top.',
+    },
+    {
+      label: 'Beginner action plan',
+      passed: /## .*(beginner action plan|starter plan|action plan|next steps)/i.test(body),
+      detail: 'Include a clear beginner action plan or next steps section.',
+    },
+    {
+      label: 'Reality check',
+      passed: /## .*(reality check|risk check|beginner safety check)/i.test(body),
+      detail: 'Add a realistic note about risk, effort, cost, or no guaranteed results.',
+    },
+    {
       label: 'FAQ section',
       passed: /## .*faq|## .*frequently asked questions/i.test(body),
       detail: 'Include a FAQ section.',
